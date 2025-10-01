@@ -123,40 +123,44 @@ TRIAL_DAYS=7
 | 1 | Setup Base | ✅ Completo | Docker + FastAPI + Next.js |
 | 2 | Database e Models | ✅ Completo | PostgreSQL + SQLAlchemy + 14 tabelas |
 | 3 | Autenticação JWT Multi-tenant | ✅ Completo | Sistema completo de auth + isolamento |
-| 4 | **Evolution API + WhatsApp** | ✅ **Completo** | Integração completa + Áudio + Webhooks |
-| 5 | Agentes LangChain | 🔄 Pendente | 5 agentes IA + Intervenção Humana |
+| 4 | Evolution API + WhatsApp | ✅ Completo | Integração completa + Áudio + Webhooks |
+| 5 | **Agentes LangChain** | ✅ **Completo** | 5 agentes + Intervenção + Cache |
 | 6 | Sistema de Entrega | 🔄 Pendente | 3 modos + Cache endereços |
 | 7 | Frontend Onboarding | 🔄 Pendente | Wizard setup + QR Code |
 | 8 | Dashboard | 🔄 Pendente | Pedidos real-time + Chat |
 | 9 | Trial System | 🔄 Pendente | Gestão de assinaturas |
 | 10 | Deploy Produção | 🔄 Pendente | Docker Swarm + Traefik |
 
-### 🎉 Última Sessão Completa: Sessão 4
+### 🎉 Última Sessão Completa: Sessão 5
 
-**Implementações da Sessão 4:**
-- ✅ Integração completa Evolution API v2.3.1
-- ✅ Endpoints WhatsApp (QR Code, status, send, disconnect)
-- ✅ Webhook para receber mensagens do Evolution
-- ✅ Processador de áudio com OpenAI Whisper
-- ✅ Transcrição automática de áudios em português
-- ✅ Processamento de mensagens (texto e áudio)
-- ✅ Criação automática de customers e conversations
-- ✅ Multi-tenant por instância (tenant_{uuid})
-- ✅ Logs de webhooks para debug
-- ✅ Teste de integração validado
+**Implementações da Sessão 5:**
+- ✅ Sistema completo de agentes LangChain
+- ✅ MasterAgent (orquestrador com roteamento inteligente)
+- ✅ AttendanceAgent (saudações e informações de produtos)
+- ✅ ValidationAgent (validação de endereços com 3 modos)
+- ✅ OrderAgent (montagem e gestão de pedidos)
+- ✅ PaymentAgent (processamento de pagamento simplificado)
+- ✅ InterventionService (sistema de pausa de 5min para atendimento humano)
+- ✅ AudioProcessor (transcrição de áudio via Whisper)
+- ✅ AddressCacheService (cache inteligente com fuzzy matching)
+- ✅ Detecção automática de intenções
+- ✅ Fluxo completo de conversação (greeting → products → order → address → payment)
+- ✅ Testes de estrutura e validação
 
-**Endpoints disponíveis:**
+**Agentes implementados:**
 ```
-GET  /api/v1/whatsapp/qr          # Gerar QR Code
-GET  /api/v1/whatsapp/status      # Status conexão
-POST /api/v1/whatsapp/send        # Enviar mensagem
-POST /api/v1/whatsapp/disconnect  # Desconectar
-DELETE /api/v1/whatsapp/instance  # Deletar instância
-POST /api/v1/webhook/evolution    # Receber mensagens
+MasterAgent          # Orquestração e roteamento
+├── AttendanceAgent  # Saudações e produtos
+├── ValidationAgent  # Validação de endereços (bairro/raio/híbrido)
+├── OrderAgent       # Montagem de pedidos
+└── PaymentAgent     # Pagamento (PIX/dinheiro/cartão)
 ```
 
-📄 [Ver documentação completa da Sessão 4](SESSION_4_SUMMARY.md)
-📖 [Guia de setup Ngrok para testes locais](SETUP_NGROK.md)
+**Features especiais:**
+- 🤚 Intervenção humana com pause de 5min
+- 🎤 Processamento de áudio do WhatsApp
+- 💾 Cache de endereços (economia 80% API calls)
+- 📍 3 modos de validação de entrega
 
 ## 🤝 Contribuindo
 
