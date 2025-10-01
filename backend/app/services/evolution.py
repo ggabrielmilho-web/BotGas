@@ -93,6 +93,7 @@ class EvolutionAPIService:
 
         data = {
             "instanceName": instance_name,
+            "integration": "WHATSAPP-BAILEYS",  # Obrigatório para Evolution API
             "token": self.api_key,
             "qrcode": True,
             "webhook": webhook,
