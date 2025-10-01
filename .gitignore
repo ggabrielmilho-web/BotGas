@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.production
+backend/.env
+frontend/.env
+
+# Ngrok (IMPORTANTE - contém token secreto)
+ngrok.yml
+*.ngrok.yml
 
 # Python
 __pycache__/

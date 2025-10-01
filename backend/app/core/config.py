@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # APIs
     OPENAI_API_KEY: str
-    GOOGLE_MAPS_API_KEY: str
+    GOOGLE_MAPS_API_KEY: Optional[str] = None
     EVOLUTION_API_URL: str
     EVOLUTION_API_KEY: str
 
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # App
     WEBHOOK_URL: str
     TRIAL_DAYS: int = 7
+    ENVIRONMENT: str = "development"
 
     # Cache
     ADDRESS_CACHE_DAYS: int = 30

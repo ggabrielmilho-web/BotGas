@@ -4,7 +4,8 @@ from app.core.config import settings
 from app.middleware.tenant import TenantMiddleware
 
 # Import routers
-from app.api import auth, tenant
+from app.api import auth, tenant, whatsapp
+from app.webhooks import whatsapp as whatsapp_webhook
 
 app = FastAPI(
     title="GasBot API",
@@ -27,6 +28,8 @@ app.add_middleware(TenantMiddleware)
 # Include routers
 app.include_router(auth.router)
 app.include_router(tenant.router)
+app.include_router(whatsapp.router)
+app.include_router(whatsapp_webhook.router)
 
 @app.get("/")
 async def root():
