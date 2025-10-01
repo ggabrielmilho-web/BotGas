@@ -122,8 +122,8 @@ TRIAL_DAYS=7
 |--------|--------|--------|-------------------|
 | 1 | Setup Base | ✅ Completo | Docker + FastAPI + Next.js |
 | 2 | Database e Models | ✅ Completo | PostgreSQL + SQLAlchemy + 14 tabelas |
-| 3 | **Autenticação JWT Multi-tenant** | ✅ **Completo** | Sistema completo de auth + isolamento |
-| 4 | Evolution API | 🔄 Pendente | WhatsApp + Áudio + Webhooks |
+| 3 | Autenticação JWT Multi-tenant | ✅ Completo | Sistema completo de auth + isolamento |
+| 4 | **Evolution API + WhatsApp** | ✅ **Completo** | Integração completa + Áudio + Webhooks |
 | 5 | Agentes LangChain | 🔄 Pendente | 5 agentes IA + Intervenção Humana |
 | 6 | Sistema de Entrega | 🔄 Pendente | 3 modos + Cache endereços |
 | 7 | Frontend Onboarding | 🔄 Pendente | Wizard setup + QR Code |
@@ -131,18 +131,32 @@ TRIAL_DAYS=7
 | 9 | Trial System | 🔄 Pendente | Gestão de assinaturas |
 | 10 | Deploy Produção | 🔄 Pendente | Docker Swarm + Traefik |
 
-### 🎉 Última Sessão Completa: Sessão 3
+### 🎉 Última Sessão Completa: Sessão 4
 
-**Implementações da Sessão 3:**
-- ✅ Sistema de autenticação JWT (access + refresh tokens)
-- ✅ Middleware de isolamento multi-tenant automático
-- ✅ Endpoints: register, login, refresh, tenant management
-- ✅ Trial automático de 7 dias para novos tenants
-- ✅ Validação de subscription em rotas protegidas
-- ✅ Serviço completo de gerenciamento de tenants
-- ✅ Dependencies para proteção de rotas
+**Implementações da Sessão 4:**
+- ✅ Integração completa Evolution API v2.3.1
+- ✅ Endpoints WhatsApp (QR Code, status, send, disconnect)
+- ✅ Webhook para receber mensagens do Evolution
+- ✅ Processador de áudio com OpenAI Whisper
+- ✅ Transcrição automática de áudios em português
+- ✅ Processamento de mensagens (texto e áudio)
+- ✅ Criação automática de customers e conversations
+- ✅ Multi-tenant por instância (tenant_{uuid})
+- ✅ Logs de webhooks para debug
+- ✅ Teste de integração validado
 
-📄 [Ver documentação completa da Sessão 3](SESSION_3_SUMMARY.md)
+**Endpoints disponíveis:**
+```
+GET  /api/v1/whatsapp/qr          # Gerar QR Code
+GET  /api/v1/whatsapp/status      # Status conexão
+POST /api/v1/whatsapp/send        # Enviar mensagem
+POST /api/v1/whatsapp/disconnect  # Desconectar
+DELETE /api/v1/whatsapp/instance  # Deletar instância
+POST /api/v1/webhook/evolution    # Receber mensagens
+```
+
+📄 [Ver documentação completa da Sessão 4](SESSION_4_SUMMARY.md)
+📖 [Guia de setup Ngrok para testes locais](SETUP_NGROK.md)
 
 ## 🤝 Contribuindo
 
