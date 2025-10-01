@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  backend:
+    image: gasbot/backend:latest
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.backend.rule=Host(`api.gasbot.com.br`)"
+        - "traefik.http.services.backend.loadbalancer.server.port=8000"
+        - "traefik.http.routers.backend.tls=true"
+        - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+    environment:
+      - DATABASE_URL=postgresql://gasbot:${DB_PASSWORD}@postgres:5432/gasbot
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - EVOLUTION_API_URL=http://evolution:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - WEBHOOK_URL=https://api.gasbot.com.br/webhook
+    networks:
+      - gasbot-network
+      - traefik-public
+
+  frontend:
+    image: gasbot/frontend:latest
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.frontend.rule=Host(`app.gasbot.com.br`)"
+        - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+        - "traefik.http.routers.frontend.tls=true"
+        - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+    environment:
+      - NEXT_PUBLIC_API_URL=https://api.gasbot.com.br
+    networks:
+      - gasbot-network
+      - traefik-public
+
+  postgres:
+    image: postgres:15
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+    environment:
+      - POSTGRES_DB=gasbot
+      - POSTGRES_USER=gasbot
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gasbot-network
+
+  redis:
+    image: redis:7-alpine
+    deploy:
+      replicas: 1
+    volumes:
+      - redis_data:/data
+    networks:
+      - gasbot-network
+
+  evolution:
+    image: atendai/evolution-api:latest
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.evolution.rule=Host(`evolution.gasbot.com.br`)"
+        - "traefik.http.services.evolution.loadbalancer.server.port=8080"
+        - "traefik.http.routers.evolution.tls=true"
+        - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://gasbot:${DB_PASSWORD}@postgres:5432/evolution
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+    networks:
+      - gasbot-network
+      - traefik-public
+
+networks:
+  gasbot-network:
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
