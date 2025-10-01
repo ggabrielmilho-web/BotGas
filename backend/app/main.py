@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.middleware.tenant import TenantMiddleware
+
+# Import routers
+from app.api import auth, tenant
 
 app = FastAPI(
     title="GasBot API",
@@ -16,6 +20,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tenant middleware for multi-tenant isolation
+app.add_middleware(TenantMiddleware)
+
+# Include routers
+app.include_router(auth.router)
+app.include_router(tenant.router)
 
 @app.get("/")
 async def root():
