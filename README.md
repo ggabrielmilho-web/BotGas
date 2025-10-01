@@ -119,7 +119,7 @@ TRIAL_DAYS=7
 ## 📊 Status do Projeto
 
 - [x] Sessão 1: Setup Base ✅
-- [ ] Sessão 2: Database e Models
+- [x] Sessão 2: Database e Models ✅
 - [ ] Sessão 3: Autenticação
 - [ ] Sessão 4: Evolution API
 - [ ] Sessão 5: Agentes LangChain
