@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrdersList } from '@/components/dashboard/OrdersList';
 import { ChatHistory } from '@/components/dashboard/ChatHistory';
 import { InterventionPanel } from '@/components/dashboard/InterventionPanel';
+import { TrialBanner, TrialStatusCard } from '@/components/TrialBanner';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
 
@@ -81,9 +82,13 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <>
+      {/* Trial Banner (fixed no topo) */}
+      <TrialBanner />
+
+      <div className="container mx-auto p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
@@ -98,8 +103,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Métricas Principais */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* Trial Status Card + Métricas Principais */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <TrialStatusCard />
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pedidos Hoje</CardTitle>
@@ -202,6 +208,7 @@ export default function DashboardPage() {
           <InterventionPanel />
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </>
   );
 }

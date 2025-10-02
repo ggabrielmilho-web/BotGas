@@ -66,6 +66,7 @@ async def get_current_tenant(
 ) -> Tenant:
     """
     Dependency to get current tenant from authenticated user
+    Também verifica status do trial
 
     Args:
         current_user: Current authenticated user
@@ -82,6 +83,53 @@ async def get_current_tenant(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found"
+        )
+
+    return tenant
+
+
+async def verify_trial_status(
+    tenant: Tenant = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+) -> Tenant:
+    """
+    Dependency to verify tenant has active trial or subscription
+    Bloqueia acesso se trial expirado
+
+    Args:
+        tenant: Current tenant
+        db: Database session
+
+    Returns:
+        Tenant object if access is allowed
+
+    Raises:
+        HTTPException: If trial expired and no active subscription
+    """
+    from app.services.trial import TrialService
+    from datetime import datetime
+
+    # Se já tem assinatura ativa, liberar acesso
+    if tenant.subscription_status == 'active':
+        return tenant
+
+    # Se está em trial, verificar se expirou
+    if tenant.subscription_status == 'trial':
+        if tenant.trial_ends_at and datetime.now() > tenant.trial_ends_at:
+            # Trial expirado
+            tenant.subscription_status = 'expired'
+            db.commit()
+
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Trial expirado. Por favor, assine um plano para continuar."
+            )
+
+    # Se status é 'expired', bloquear
+    if tenant.subscription_status == 'expired':
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Acesso bloqueado. Por favor, assine um plano."
         )
 
     return tenant
