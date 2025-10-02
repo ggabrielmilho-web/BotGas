@@ -14,6 +14,7 @@ GasBot é uma plataforma multi-tenant que automatiza atendimento ao cliente via 
 - 📍 **Entrega Flexível** - 3 modos: por bairro, raio/km ou híbrido
 - 💰 **Pagamento Simples** - Mostra PIX sem validação complexa
 - 💾 **Cache Inteligente** - Economia de 80% em chamadas de API externa
+- 🎯 **Trial Gratuito** - 7 dias automáticos com bloqueio inteligente via Celery
 
 ## 🛠️ Stack Tecnológica
 
@@ -126,12 +127,49 @@ TRIAL_DAYS=7
 | 4 | Evolution API + WhatsApp | ✅ Completo | Integração completa + Áudio + Webhooks |
 | 5 | Agentes LangChain | ✅ Completo | 5 agentes + Intervenção + Cache |
 | 6 | Sistema de Entrega | ✅ Completo | 3 modos + Cache + APIs REST |
-| 7 | **Frontend Onboarding** | ✅ **Completo** | Wizard 5 steps + 3 modos delivery |
-| 8 | **Dashboard Frontend** | ✅ **Completo** | Pedidos real-time + Chat + Intervenção |
-| 9 | Trial System | 🔄 Pendente | Gestão de assinaturas |
+| 7 | Frontend Onboarding | ✅ Completo | Wizard 5 steps + 3 modos delivery |
+| 8 | Dashboard Frontend | ✅ Completo | Pedidos real-time + Chat + Intervenção |
+| 9 | **Sistema de Trial** | ✅ **Completo** | Trial 7 dias + Celery + Banner + Planos |
 | 10 | Deploy Produção | 🔄 Pendente | Docker Swarm + Traefik |
+| 11 | Testes | 🔄 Pendente | Testes + Documentação |
 
-### 🎉 Última Sessão Completa: Sessão 8
+### 🎉 Última Sessão Completa: Sessão 9
+
+**Implementações da Sessão 9:**
+- ✅ Sistema completo de Trial gratuito (7 dias)
+- ✅ TrialService com todas operações de trial
+- ✅ Tasks Celery periódicas (a cada 1h e 24h)
+- ✅ 6 endpoints API para gerenciar trial
+- ✅ Middleware de bloqueio automático (402 quando expirado)
+- ✅ TrialBanner contextual (vermelho/amarelo/azul)
+- ✅ TrialStatusCard no dashboard
+- ✅ Página de Planos (Básico R$200 e Premium R$300)
+- ✅ Celery Beat configurado com schedule
+- ✅ Verificação automática de trials expirados
+- ✅ Notificação de trials expirando em 3 dias
+- ✅ FAQ e garantia de 7 dias
+
+**Componentes criados:**
+```
+Trial System
+├── TrialService       # start, check, extend, activate, cancel
+├── Celery Tasks       # check_expired (1h), notify_expiring (24h)
+├── Trial API          # 6 endpoints
+├── TrialBanner        # Banner fixed com cores contextuais
+├── TrialStatusCard    # Card de status no dashboard
+└── PlansPage          # Página de planos com ativação
+```
+
+**Features especiais:**
+- 🎯 Trial automático ao registrar (7 dias)
+- ⏰ Celery verifica expiração a cada 1 hora
+- 🚨 Banner vermelho quando expirado
+- ⚠️ Banner amarelo nos últimos 3 dias
+- 🔵 Banner azul durante trial normal
+- 🔒 Bloqueio automático via middleware
+- 💳 2 planos configurados (Básico e Premium)
+
+---
 
 **Implementações da Sessão 8:**
 - ✅ Dashboard completo com métricas em tempo real
