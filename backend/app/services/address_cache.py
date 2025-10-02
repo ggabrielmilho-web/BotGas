@@ -349,6 +349,48 @@ class AddressCacheService:
 
         return deleted_count
 
+    async def cache_address(
+        self,
+        address: str,
+        tenant_id: UUID,
+        normalized_address: str,
+        neighborhood: Optional[str] = None,
+        city: Optional[str] = None,
+        state: Optional[str] = None,
+        zip_code: Optional[str] = None,
+        coordinates: Optional[dict] = None,
+        is_deliverable: bool = True,
+        delivery_fee: float = 0,
+        delivery_area_id: Optional[UUID] = None,
+        google_place_id: Optional[str] = None
+    ) -> AddressCache:
+        """
+        Cache a validated address (shorthand method)
+        """
+
+        validation_result = {
+            "normalized_address": normalized_address,
+            "neighborhood": neighborhood,
+            "city": city,
+            "state": state,
+            "zip_code": zip_code,
+            "coordinates": coordinates,
+            "is_deliverable": is_deliverable,
+            "delivery_fee": delivery_fee,
+            "place_id": google_place_id
+        }
+
+        await self.save_to_cache(address, tenant_id, validation_result)
+
+        # Return the cached entry
+        normalized_input = self._normalize_address(address)
+        return self.db.query(AddressCache).filter(
+            and_(
+                AddressCache.tenant_id == tenant_id,
+                AddressCache.address_text == normalized_input
+            )
+        ).first()
+
     async def invalidate_address(
         self,
         address: str,
