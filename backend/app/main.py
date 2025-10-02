@@ -4,7 +4,7 @@ from app.core.config import settings
 from app.middleware.tenant import TenantMiddleware
 
 # Import routers
-from app.api import auth, tenant, whatsapp, delivery
+from app.api import auth, tenant, whatsapp, delivery, dashboard, conversations
 from app.webhooks import whatsapp as whatsapp_webhook
 
 app = FastAPI(
@@ -30,6 +30,8 @@ app.include_router(auth.router)
 app.include_router(tenant.router)
 app.include_router(whatsapp.router)
 app.include_router(delivery.router)
+app.include_router(dashboard.router)
+app.include_router(conversations.router)
 app.include_router(whatsapp_webhook.router)
 
 @app.get("/")

@@ -337,3 +337,47 @@ class WebhookLogResponse(WebhookLogCreate):
     processed: bool
     error: Optional[str] = None
     created_at: datetime
+
+
+# ============================================================================
+# DASHBOARD SCHEMAS
+# ============================================================================
+
+class DashboardSummary(BaseModel):
+    """Resumo do dashboard com métricas principais"""
+    orders_today: int
+    revenue_today: float
+    pending_orders: int
+    active_conversations: int
+    active_interventions: int
+    total_customers: int
+
+
+# ============================================================================
+# AUTH SCHEMAS
+# ============================================================================
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+
+
+class TokenPayload(BaseModel):
+    sub: UUID
+    tenant_id: UUID
+    role: str
+    exp: int
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    company_name: str
+    phone: str
