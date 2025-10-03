@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token, verify_token_type
-from app.database.session import get_db
+from app.database.base import get_db
 from app.database.models import User, Tenant
 from app.services.tenant import TenantService
 

@@ -52,7 +52,7 @@ class AudioProcessor:
             duration = audio_data.get("duration", 0)
             if duration > self.MAX_AUDIO_DURATION_SECONDS:
                 return {
-                    "text": f"Desculpe, ·udio muito longo ({duration}s). Envie ·udios de atÈ {self.MAX_AUDIO_DURATION_SECONDS} segundos.",
+                    "text": f"Desculpe, √°udio muito longo ({duration}s). Envie √°udios de at√© {self.MAX_AUDIO_DURATION_SECONDS} segundos.",
                     "type": "audio",
                     "success": False,
                     "error": "duration_exceeded"
@@ -63,7 +63,7 @@ class AudioProcessor:
 
             if not audio_bytes:
                 return {
-                    "text": "Desculpe, n„o consegui processar o ·udio. Pode tentar novamente?",
+                    "text": "Desculpe, n√£o consegui processar o √°udio. Pode tentar novamente?",
                     "type": "audio",
                     "success": False,
                     "error": "no_audio_data"
@@ -73,7 +73,7 @@ class AudioProcessor:
             size_mb = len(audio_bytes) / (1024 * 1024)
             if size_mb > self.MAX_AUDIO_SIZE_MB:
                 return {
-                    "text": f"Desculpe, ·udio muito grande ({size_mb:.1f}MB). Tamanho m·ximo: {self.MAX_AUDIO_SIZE_MB}MB.",
+                    "text": f"Desculpe, √°udio muito grande ({size_mb:.1f}MB). Tamanho m√°ximo: {self.MAX_AUDIO_SIZE_MB}MB.",
                     "type": "audio",
                     "success": False,
                     "error": "size_exceeded"
@@ -99,7 +99,7 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             return {
-                "text": "Desculpe, tive um problema ao ouvir o ·udio. Pode escrever sua mensagem ou tentar o ·udio novamente?",
+                "text": "Desculpe, tive um problema ao ouvir o √°udio. Pode escrever sua mensagem ou tentar o √°udio novamente?",
                 "type": "audio",
                 "success": False,
                 "error": str(e)
@@ -174,13 +174,13 @@ class AudioProcessor:
                     model="whisper-1",
                     file=audio_file,
                     language="pt",
-                    prompt="Transcreva o pedido do cliente para distribuidora de g·s e ·gua. Contexto: atendimento comercial."
+                    prompt="Transcreva o pedido do cliente para distribuidora de gÔøΩs e ÔøΩgua. Contexto: atendimento comercial."
                 )
 
             transcription = response.text.strip()
 
             if not transcription:
-                return "[¡udio vazio ou inaudÌvel. Pode repetir?]"
+                return "[√Åudio vazio ou inaud√≠vel. Pode repetir?]"
 
             logger.info(f"Audio transcribed successfully: {transcription[:50]}...")
 
@@ -214,3 +214,7 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"TTS error: {e}")
             raise Exception("Text-to-speech failed")
+
+
+# Global instance
+audio_processor = AudioProcessor()

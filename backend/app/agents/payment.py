@@ -32,7 +32,7 @@ class PaymentAgent(BaseAgent):
     async def process(self, message: str, context: AgentContext) -> AgentResponse:
         """Process payment selection"""
 
-        from app.database.session import get_db
+        from app.database.base import get_db
 
         db = next(get_db())
 

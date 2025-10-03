@@ -93,18 +93,18 @@ class EvolutionAPIService:
 
         data = {
             "instanceName": instance_name,
-            "integration": "WHATSAPP-BAILEYS",  # Obrigatório para Evolution API
-            "token": self.api_key,
+            "integration": "WHATSAPP-BAILEYS",
             "qrcode": True,
-            "webhook": webhook,
-            "webhookByEvents": True,
-            "webhookEvents": [
-                "QRCODE_UPDATED",
-                "CONNECTION_UPDATE",
-                "MESSAGES_UPSERT",
-                "MESSAGES_UPDATE",
-                "SEND_MESSAGE"
-            ]
+            "webhook": {
+                "url": webhook,
+                "webhookByEvents": False,
+                "events": [
+                    "QRCODE_UPDATED",
+                    "CONNECTION_UPDATE",
+                    "MESSAGES_UPSERT",
+                    "MESSAGES_UPDATE"
+                ]
+            }
         }
 
         result = await self._request("POST", "/instance/create", json_data=data)

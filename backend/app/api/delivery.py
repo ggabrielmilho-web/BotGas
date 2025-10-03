@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database.session import get_db
+from app.database.base import get_db
 from app.middleware.tenant import get_current_tenant
 from app.database.models import Tenant
 from app.services.delivery_modes import DeliveryModeService

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
-from app.database.session import get_db
+from app.database.base import get_db
 from app.database.models import Tenant
 from app.middleware.tenant import get_current_tenant, get_current_user
 from app.services.tenant import TenantService

@@ -13,7 +13,7 @@ from app.database.base import get_db
 from app.database.models import Conversation, HumanIntervention, Customer, Tenant
 from app.middleware.tenant import get_current_tenant
 from app.services.intervention import InterventionService
-from app.services.evolution import EvolutionService
+from app.services.evolution import EvolutionAPIService
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["conversations"])
 
@@ -63,7 +63,7 @@ async def start_intervention(
     ).first()
 
     if customer:
-        evolution = EvolutionService()
+        evolution = EvolutionAPIService()
         await evolution.send_message(
             instance_id=current_tenant.whatsapp_instance_id,
             phone=customer.whatsapp_number,
@@ -124,7 +124,7 @@ async def resume_bot(
     ).first()
 
     if customer:
-        evolution = EvolutionService()
+        evolution = EvolutionAPIService()
         await evolution.send_message(
             instance_id=current_tenant.whatsapp_instance_id,
             phone=customer.whatsapp_number,
@@ -166,7 +166,7 @@ async def send_manual_message(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     # Enviar mensagem
-    evolution = EvolutionService()
+    evolution = EvolutionAPIService()
     await evolution.send_message(
         instance_id=current_tenant.whatsapp_instance_id,
         phone=customer.whatsapp_number,

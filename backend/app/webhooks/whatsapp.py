@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 
-from app.database.session import get_db
+from app.database.base import get_db
 from app.database.models import Tenant, Customer, Conversation, WebhookLog
 from app.services.audio_processor import audio_processor
 from app.services.evolution import evolution_service

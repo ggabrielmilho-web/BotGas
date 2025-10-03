@@ -10,13 +10,15 @@ services:
       - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-      - EVOLUTION_API_URL=http://evolution:8080
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - WEBHOOK_URL=http://localhost:8000/webhook
     depends_on:
       - postgres
       - redis
+    env_file:
+      - .env
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
@@ -50,16 +52,8 @@ services:
     ports:
       - "6379:6379"
 
-  evolution:
-    image: atendai/evolution-api:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://gasbot:password@postgres:5432/evolution
-      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
-    depends_on:
-      - postgres
+  # Evolution API roda externamente em https://api.carvalhoia.com
+  # Não é necessário rodar localmente
 
 volumes:
   postgres_data:

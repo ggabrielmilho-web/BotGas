@@ -18,8 +18,7 @@ from app.database.schemas import (
     OrderResponse, ConversationResponse,
     DashboardSummary, CustomerResponse
 )
-from app.middleware.tenant import get_current_tenant
-from app.core.security import get_current_user
+from app.middleware.tenant import get_current_tenant, get_current_user
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
 

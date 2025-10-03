@@ -83,7 +83,7 @@ class UserResponse(UserBase):
 class ProductBase(BaseModel):
     name: str
     description: Optional[str] = None
-    price: Decimal = Field(..., gt=0, decimal_places=2)
+    price: Decimal = Field(..., gt=0)
     category: Optional[str] = None
     image_url: Optional[str] = None
     is_available: bool = True
@@ -97,7 +97,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    price: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    price: Optional[Decimal] = Field(None, gt=0)
     category: Optional[str] = None
     image_url: Optional[str] = None
     is_available: Optional[bool] = None
@@ -122,7 +122,7 @@ class NeighborhoodConfigBase(BaseModel):
     city: str = 'São Paulo'
     state: str = 'SP'
     delivery_type: str = 'paid'
-    delivery_fee: Decimal = Field(default=0, ge=0, decimal_places=2)
+    delivery_fee: Decimal = Field(default=0, ge=0)
     delivery_time_minutes: int = 60
     zip_codes: Optional[List[str]] = None
     is_active: bool = True
@@ -144,11 +144,11 @@ class NeighborhoodConfigResponse(NeighborhoodConfigBase):
 
 class RadiusConfigBase(BaseModel):
     center_address: str
-    center_lat: Optional[Decimal] = Field(None, ge=-90, le=90, decimal_places=8)
-    center_lng: Optional[Decimal] = Field(None, ge=-180, le=180, decimal_places=8)
-    radius_km_start: Decimal = Field(..., ge=0, decimal_places=2)
-    radius_km_end: Decimal = Field(..., gt=0, decimal_places=2)
-    delivery_fee: Decimal = Field(..., ge=0, decimal_places=2)
+    center_lat: Optional[Decimal] = Field(None, ge=-90, le=90)
+    center_lng: Optional[Decimal] = Field(None, ge=-180, le=180)
+    radius_km_start: Decimal = Field(..., ge=0)
+    radius_km_end: Decimal = Field(..., gt=0)
+    delivery_fee: Decimal = Field(..., ge=0)
     delivery_time_minutes: int = 60
     is_active: bool = True
 
@@ -168,8 +168,8 @@ class RadiusConfigResponse(RadiusConfigBase):
 
 class DeliveryAreaBase(BaseModel):
     delivery_mode: str = Field(default='neighborhood', pattern='^(neighborhood|radius|hybrid)$')
-    free_delivery_minimum: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
-    default_fee: Decimal = Field(default=0, ge=0, decimal_places=2)
+    free_delivery_minimum: Optional[Decimal] = Field(None, ge=0)
+    default_fee: Decimal = Field(default=0, ge=0)
 
 
 class DeliveryAreaCreate(DeliveryAreaBase):
@@ -227,8 +227,8 @@ class OrderItemSchema(BaseModel):
     product_id: UUID
     product_name: str
     quantity: int = Field(..., gt=0)
-    price: Decimal = Field(..., gt=0, decimal_places=2)
-    subtotal: Decimal = Field(..., gt=0, decimal_places=2)
+    price: Decimal = Field(..., gt=0)
+    subtotal: Decimal = Field(..., gt=0)
 
 
 class OrderBase(BaseModel):
@@ -240,9 +240,9 @@ class OrderBase(BaseModel):
 
 class OrderCreate(OrderBase):
     customer_id: UUID
-    subtotal: Decimal = Field(..., gt=0, decimal_places=2)
-    delivery_fee: Decimal = Field(default=0, ge=0, decimal_places=2)
-    total: Decimal = Field(..., gt=0, decimal_places=2)
+    subtotal: Decimal = Field(..., gt=0)
+    delivery_fee: Decimal = Field(default=0, ge=0)
+    total: Decimal = Field(..., gt=0)
 
 
 class OrderUpdate(BaseModel):

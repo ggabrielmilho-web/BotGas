@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
-from app.database.session import get_db
+from app.database.base import get_db
 from app.database.models import User
 from app.core.security import (
     verify_password,

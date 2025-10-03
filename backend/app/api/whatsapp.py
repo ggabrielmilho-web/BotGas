@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.database.session import get_db
+from app.database.base import get_db
 from app.database.models import Tenant
 from app.middleware.tenant import get_current_tenant
 from app.services.evolution import evolution_service
@@ -75,10 +75,14 @@ async def get_qr_code(
             # Instance doesn't exist, create it
             await evolution_service.create_instance(instance_name)
 
+            # Wait a bit for Evolution to generate QR code
+            import asyncio
+            await asyncio.sleep(2)
+
         # Get QR code
         qr_data = await evolution_service.get_qr_code(instance_name)
 
-        qr_code = qr_data.get("qrcode", {}).get("base64", "")
+        qr_code = qr_data.get("base64", "")
 
         if not qr_code:
             raise HTTPException(

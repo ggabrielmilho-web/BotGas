@@ -38,7 +38,7 @@ class ValidationAgent(BaseAgent):
     async def process(self, message: str, context: AgentContext) -> AgentResponse:
         """Process address validation"""
 
-        from app.database.session import get_db
+        from app.database.base import get_db
 
         db = next(get_db())
 
