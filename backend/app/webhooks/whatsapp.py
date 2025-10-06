@@ -148,8 +148,78 @@ async def process_text_message(
 
     db.commit()
 
-    # TODO: Process with AI agents (Session 5)
+    # Process with AI agents
     logger.info(f"Text message received from {customer.whatsapp_number}: {message_text[:50]}")
+
+    try:
+        from app.agents import MasterAgent, AgentContext
+        from uuid import UUID
+
+        # Build agent context
+        agent_context = AgentContext(
+            tenant_id=UUID(str(tenant.id)),
+            customer_phone=customer.whatsapp_number,
+            conversation_id=UUID(str(conversation.id)),
+            session_data=conversation.context or {},
+            message_history=conversation.messages or []
+        )
+
+        # Process message with master agent
+        master_agent = MasterAgent()
+        response = await master_agent.process(
+            message={"type": "text", "content": message_text},
+            context=agent_context,
+            db=db
+        )
+
+        # If agent returned a response, send it back to customer
+        if response:
+            # Add assistant response to conversation
+            messages = conversation.messages or []
+            messages.append({
+                "role": "assistant",
+                "content": response.text,
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": "text",
+                "intent": response.intent
+            })
+            conversation.messages = messages
+            conversation.total_messages = len(messages)
+
+            # Update context if agent provided updates
+            if response.context_updates:
+                context_data = conversation.context or {}
+                context_data.update(response.context_updates)
+                conversation.context = context_data
+                flag_modified(conversation, "context")
+
+            flag_modified(conversation, "messages")
+            db.commit()
+
+            # Send response back to WhatsApp via Evolution API
+            instance_name = f"tenant_{str(tenant.id)}"
+            await evolution_service.send_text_message(
+                instance_name=instance_name,
+                number=customer.whatsapp_number,
+                message=response.text
+            )
+
+            logger.info(f"Bot response sent to {customer.whatsapp_number}: {response.text[:50]}")
+        else:
+            logger.info(f"No response sent (human intervention active or other reason)")
+
+    except Exception as e:
+        logger.error(f"Error processing message with agents: {str(e)}", exc_info=True)
+        # Send fallback message
+        try:
+            instance_name = f"tenant_{str(tenant.id)}"
+            await evolution_service.send_text_message(
+                instance_name=instance_name,
+                number=customer.whatsapp_number,
+                message="Desculpe, tive um problema ao processar sua mensagem. Pode tentar novamente?"
+            )
+        except Exception as send_error:
+            logger.error(f"Failed to send fallback message: {str(send_error)}")
 
 
 async def process_audio_message(
