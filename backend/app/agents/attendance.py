@@ -165,12 +165,20 @@ Posso ajudar em algo mais?"""
     async def _handle_general(self, message: str, tenant: Tenant, context: AgentContext) -> str:
         """Handle general questions using LLM"""
 
+        # Build address info safely
+        address_info = ""
+        if tenant.address and isinstance(tenant.address, dict):
+            street = tenant.address.get('street', '')
+            city = tenant.address.get('city', '')
+            if street or city:
+                address_info = f"- Endereço: {street} - {city}"
+
         system_prompt = f"""Você é assistente virtual da {tenant.company_name}, uma distribuidora de gás e água.
 
 Informações da empresa:
 - Nome: {tenant.company_name}
 - Telefone: {tenant.phone}
-- Endereço: {tenant.address.get('street', '')} - {tenant.address.get('city', '')}
+{address_info}
 
 Seja educado, prestativo e objetivo.
 Se não souber algo, sugira falar com atendente humano.
