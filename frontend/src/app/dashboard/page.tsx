@@ -52,8 +52,8 @@ export default function DashboardPage() {
 
   const fetchSummary = async () => {
     try {
-      const response = await api.get('/dashboard/summary');
-      setSummary(response.data);
+      const data = await api.get<DashboardSummary>('/api/v1/dashboard/summary');
+      setSummary(data);
     } catch (error) {
       console.error('Erro ao buscar resumo:', error);
     } finally {

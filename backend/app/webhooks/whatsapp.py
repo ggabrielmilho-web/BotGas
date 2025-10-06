@@ -3,6 +3,7 @@ WhatsApp webhook handler for Evolution API events
 """
 from fastapi import APIRouter, Request, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
@@ -142,6 +143,9 @@ async def process_text_message(
     conversation.messages = messages
     conversation.total_messages = len(messages)
 
+    # Mark the JSONB field as modified so SQLAlchemy detects the change
+    flag_modified(conversation, "messages")
+
     db.commit()
 
     # TODO: Process with AI agents (Session 5)
@@ -184,6 +188,9 @@ async def process_audio_message(
     })
     conversation.messages = messages
     conversation.total_messages = len(messages)
+
+    # Mark the JSONB field as modified so SQLAlchemy detects the change
+    flag_modified(conversation, "messages")
 
     db.commit()
 
@@ -304,14 +311,19 @@ async def handle_message_upsert(payload: Dict[str, Any], db: Session):
             return
 
         # Process message based on type
-        message_type = message.get("messageType")
+        # Evolution API v2 doesn't send messageType, check for content fields instead
 
-        if message_type == "conversation" or message_type == "extendedTextMessage":
-            # Text message
-            text = message.get("conversation") or message.get("extendedTextMessage", {}).get("text", "")
+        if "conversation" in message:
+            # Simple text message
+            text = message.get("conversation", "")
             await process_text_message(tenant, customer, conversation, text, db)
 
-        elif message_type == "audioMessage":
+        elif "extendedTextMessage" in message:
+            # Extended text message
+            text = message.get("extendedTextMessage", {}).get("text", "")
+            await process_text_message(tenant, customer, conversation, text, db)
+
+        elif "audioMessage" in message:
             # Audio message
             audio_msg = message.get("audioMessage", {})
             audio_url = audio_msg.get("url")
@@ -321,9 +333,10 @@ async def handle_message_upsert(payload: Dict[str, Any], db: Session):
             else:
                 logger.warning("Audio message without URL")
 
-        elif message_type in ["imageMessage", "videoMessage", "documentMessage"]:
+        elif any(k in message for k in ["imageMessage", "videoMessage", "documentMessage"]):
             # Media message (future implementation)
-            logger.info(f"Media message received: {message_type}")
+            media_type = next(k for k in ["imageMessage", "videoMessage", "documentMessage"] if k in message)
+            logger.info(f"Media message received: {media_type}")
             await process_text_message(
                 tenant, customer, conversation,
                 "[Mensagem de mídia recebida - processamento futuro]",
@@ -331,7 +344,7 @@ async def handle_message_upsert(payload: Dict[str, Any], db: Session):
             )
 
         else:
-            logger.warning(f"Unknown message type: {message_type}")
+            logger.warning(f"Unknown message structure: {list(message.keys())}")
 
     except Exception as e:
         logger.error(f"Error handling message: {str(e)}")

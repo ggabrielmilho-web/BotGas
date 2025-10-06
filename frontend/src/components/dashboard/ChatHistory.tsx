@@ -46,6 +46,7 @@ export function ChatHistory() {
   const [filter, setFilter] = useState<string | null>(null);
 
   const fetchConversations = async () => {
+    console.log('[ChatHistory] Buscando conversas...', new Date().toLocaleTimeString());
     try {
       const params: any = {};
       if (filter === 'intervention') {
@@ -54,8 +55,9 @@ export function ChatHistory() {
         params.status = filter;
       }
 
-      const response = await api.get('/dashboard/conversations', { params });
-      setConversations(response.data);
+      const data = await api.get<Conversation[]>('/api/v1/dashboard/conversations');
+      console.log('[ChatHistory] Conversas recebidas:', data.length, data);
+      setConversations(data);
     } catch (error) {
       console.error('Erro ao buscar conversas:', error);
     } finally {
@@ -65,20 +67,27 @@ export function ChatHistory() {
 
   const fetchConversationDetails = async (conversationId: string) => {
     try {
-      const response = await api.get(`/dashboard/conversations/${conversationId}/messages`);
-      setSelectedConversation(response.data);
+      const data = await api.get<ConversationDetails>(`/api/v1/dashboard/conversations/${conversationId}/messages`);
+      setSelectedConversation(data);
     } catch (error) {
       console.error('Erro ao buscar detalhes da conversa:', error);
     }
   };
 
   useEffect(() => {
+    console.log('[ChatHistory] Iniciando auto-refresh a cada 3 segundos');
     fetchConversations();
 
-    // Atualizar a cada 15 segundos
-    const interval = setInterval(fetchConversations, 15000);
+    // Atualizar a cada 3 segundos (para desenvolvimento)
+    const interval = setInterval(() => {
+      console.log('[ChatHistory] Executando refresh automático...');
+      fetchConversations();
+    }, 3000);
 
-    return () => clearInterval(interval);
+    return () => {
+      console.log('[ChatHistory] Limpando interval');
+      clearInterval(interval);
+    };
   }, [filter]);
 
   if (loading) {
