@@ -349,6 +349,12 @@ async def handle_message_upsert(payload: Dict[str, Any], db: Session):
 
         # Get sender info
         remote_jid = key.get("remoteJid", "")
+
+        # Ignore group messages (groups end with @g.us)
+        if remote_jid.endswith("@g.us"):
+            logger.info(f"Ignoring group message from: {remote_jid}")
+            return
+
         phone_number = remote_jid.replace("@s.whatsapp.net", "")
 
         push_name = message.get("pushName", phone_number)
