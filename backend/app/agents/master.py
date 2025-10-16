@@ -142,28 +142,52 @@ class MasterAgent(BaseAgent):
         # Determine current conversation stage
         stage = context.session_data.get("stage", "greeting")
 
-        # Greeting / Product inquiry
-        if intent in ["greeting", "product_inquiry", "help", "general"]:
+        print(f"\n{'='*80}")
+        print(f"🔍 ROUTING DEBUG")
+        print(f"Intent: {intent}")
+        print(f"Stage: {stage}")
+        print(f"Message: {message[:50]}")
+        print(f"Context Data: {context.session_data}")
+        print(f"{'='*80}\n")
+
+        logger.info(f"🔍 Routing - Intent: {intent}, Stage: {stage}, Message: {message[:50]}")
+
+        # Route based on intent first, then fall back to stage
+        # This allows specific intents to override stage-based routing
+
+        # Greeting / Product inquiry / Help (always handle these first)
+        if intent in ["greeting", "product_inquiry", "help"]:
+            print(f"➡️ ROUTING TO: AttendanceAgent (intent: {intent})")
             agent = AttendanceAgent()
             return await agent.process(message, context)
 
         # Address validation
         elif intent == "provide_address" or stage == "awaiting_address":
+            print("➡️ ROUTING TO: ValidationAgent")
             agent = ValidationAgent()
             return await agent.process(message, context)
 
         # Order management
         elif intent == "make_order" or stage == "building_order":
+            print("➡️ ROUTING TO: OrderAgent")
             agent = OrderAgent()
             return await agent.process(message, context)
 
         # Payment
         elif intent == "payment" or stage == "payment":
+            print("➡️ ROUTING TO: PaymentAgent")
             agent = PaymentAgent()
             return await agent.process(message, context)
 
-        # Default to attendance agent
+        # Confirming order (special stage after address validated)
+        elif stage == "confirming_order":
+            print("➡️ ROUTING TO: OrderAgent (confirming stage)")
+            agent = OrderAgent()
+            return await agent.process(message, context)
+
+        # Default to attendance agent for general messages
         else:
+            print(f"➡️ ROUTING TO: AttendanceAgent (DEFAULT)")
             agent = AttendanceAgent()
             return await agent.process(message, context)
 

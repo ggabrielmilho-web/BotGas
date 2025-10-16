@@ -40,8 +40,8 @@ class DeliveryConfigResponse(DeliveryConfigBase):
 
 class NeighborhoodCreate(BaseModel):
     neighborhood_name: str
-    city: str = "São Paulo"
-    state: str = "SP"
+    city: Optional[str] = None  # Will be filled from tenant address if not provided
+    state: Optional[str] = None  # Will be filled from tenant address if not provided
     delivery_type: str = "paid"  # free, paid, not_available
     delivery_fee: float = 0
     delivery_time_minutes: int = 60
@@ -252,12 +252,23 @@ async def create_neighborhood(
     """
     service = NeighborhoodDeliveryService(db)
 
+    # Get city and state from tenant if not provided
+    city = neighborhood.city
+    state = neighborhood.state
+
+    if not city or not state:
+        tenant_address = current_tenant.address or {}
+        if not city:
+            city = tenant_address.get('city', 'São Paulo')  # Fallback to São Paulo
+        if not state:
+            state = tenant_address.get('state', 'SP')  # Fallback to SP
+
     try:
         config = await service.add_neighborhood(
             tenant_id=current_tenant.id,
             neighborhood_name=neighborhood.neighborhood_name,
-            city=neighborhood.city,
-            state=neighborhood.state,
+            city=city,
+            state=state,
             delivery_type=neighborhood.delivery_type,
             delivery_fee=neighborhood.delivery_fee,
             delivery_time_minutes=neighborhood.delivery_time_minutes,
@@ -344,6 +355,19 @@ async def bulk_create_neighborhoods(
     Adiciona múltiplos bairros de uma vez
     """
     service = NeighborhoodDeliveryService(db)
+
+    # Get city and state from tenant address
+    tenant_address = current_tenant.address or {}
+    default_city = tenant_address.get('city', 'São Paulo')
+    default_state = tenant_address.get('state', 'SP')
+
+    # Fill city/state for each neighborhood if not provided
+    for neighborhood in request.neighborhoods:
+        if not neighborhood.get('city'):
+            neighborhood['city'] = default_city
+        if not neighborhood.get('state'):
+            neighborhood['state'] = default_state
+
     created = await service.bulk_add_neighborhoods(
         tenant_id=current_tenant.id,
         neighborhoods=request.neighborhoods

@@ -4,6 +4,7 @@ Order Agent - Handles order creation and management
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 from datetime import datetime
+from decimal import Decimal
 import logging
 import re
 
@@ -51,6 +52,52 @@ class OrderAgent(BaseAgent):
                 Product.tenant_id == context.tenant_id,
                 Product.is_available == True
             ).all()
+
+            # Special case: If stage is "confirming_order" and we have address
+            # This means ValidationAgent just validated the address
+            # We should now move to payment
+            stage = context.session_data.get("stage")
+            if stage == "confirming_order" and context.session_data.get("delivery_address"):
+                # Check if customer is confirming ("sim", "confirmar", etc)
+                message_lower = message.lower()
+                confirming_words = ["sim", "confirmar", "ok", "pode", "certo", "isso"]
+
+                if any(word in message_lower for word in confirming_words):
+                    # Update order with delivery fee
+                    delivery_fee = context.session_data.get("delivery_fee", 0.0)
+                    current_order["delivery_fee"] = delivery_fee
+                    current_order["total"] = current_order.get("subtotal", 0) + delivery_fee
+
+                    # Build final summary and ask for payment
+                    summary = await self._build_order_summary(current_order, final=True)
+
+                    payment_methods = tenant.payment_methods or ["Dinheiro"]
+                    payment_options = []
+
+                    for method in payment_methods:
+                        if method.lower() == "pix" and tenant.pix_enabled:
+                            payment_options.append("• 📱 PIX")
+                        elif method.lower() == "dinheiro":
+                            payment_options.append("• 💵 Dinheiro")
+                        elif method.lower() in ["cartao", "cartão"]:
+                            payment_options.append("• 💳 Cartão")
+
+                    payment_text = "\n".join(payment_options)
+
+                    return AgentResponse(
+                        text=f"""{summary}
+
+Perfeito! Como você quer pagar?
+
+{payment_text}""",
+                        intent="ready_for_payment",
+                        next_agent="payment",
+                        context_updates={
+                            "current_order": current_order,
+                            "stage": "payment"
+                        },
+                        should_end=False
+                    )
 
             # Parse customer intent
             intent = await self._parse_order_intent(message, products, context)
@@ -166,7 +213,27 @@ Aceitamos:
                 )
 
             else:
-                # General order question - use LLM
+                # General order question - check if customer wants to finish ordering
+                message_lower = message.lower()
+                finish_words = ["não", "nao", "n", "so", "somente", "pronto", "terminar", "apenas isso"]
+
+                # If order has items AND customer indicated they're done, ask for address
+                if current_order.get("items") and any(word in message_lower for word in finish_words):
+                    return AgentResponse(
+                        text="""Para finalizar o pedido, preciso do seu endereço de entrega.
+
+Por favor, me envie:
+Rua, número, bairro""",
+                        intent="address_needed",
+                        next_agent="validation",
+                        context_updates={
+                            "current_order": current_order,
+                            "stage": "awaiting_address"
+                        },
+                        should_end=False
+                    )
+
+                # Otherwise, use LLM for general question
                 response_text = await self._handle_general_order_question(
                     message,
                     current_order,
@@ -177,6 +244,7 @@ Aceitamos:
                 return AgentResponse(
                     text=response_text,
                     intent="general",
+                    context_updates={"current_order": current_order},
                     should_end=False
                 )
 
@@ -239,6 +307,18 @@ Aceitamos:
         """Extract product and quantity from message"""
 
         message_lower = message.lower()
+
+        # First, try to match by index (1, 2, 3, etc)
+        # If message is just a number or starts with a number, treat as index
+        numbers = re.findall(r'\d+', message)
+        if numbers and message.strip().isdigit():
+            # Message is just a number - treat as product index
+            index = int(numbers[0]) - 1  # Convert to 0-based index
+            if 0 <= index < len(products):
+                return {
+                    "product": products[index],
+                    "quantity": 1
+                }
 
         # Try to match product name
         matched_product = None
@@ -439,10 +519,18 @@ Seja claro e objetivo."""
             db.add(customer)
             db.flush()
 
+        # Generate order number (get max order_number for tenant and increment)
+        max_order = db.query(Order).filter(
+            Order.tenant_id == context.tenant_id
+        ).order_by(Order.order_number.desc()).first()
+
+        next_order_number = (max_order.order_number + 1) if max_order and max_order.order_number else 1
+
         # Create order
         order_obj = Order(
             tenant_id=context.tenant_id,
             customer_id=customer.id,
+            order_number=next_order_number,
             status="new",
             items=order["items"],
             subtotal=order["subtotal"],
@@ -459,7 +547,7 @@ Seja claro e objetivo."""
 
         # Update customer stats
         customer.order_count += 1
-        customer.total_spent += order["total"]
+        customer.total_spent += Decimal(str(order["total"]))
         customer.last_order_at = datetime.utcnow()
         db.commit()
 

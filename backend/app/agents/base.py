@@ -111,7 +111,7 @@ Sempre confirme informações importantes antes de prosseguir."""
             return "make_order"
 
         # Address
-        address_words = ["endereço", "entregar", "entrega", "rua", "avenida"]
+        address_words = ["endereço", "entregar", "entrega", "rua", "avenida", " av ", "av.", "número", "numero", "nº", "n°", "bairro", "centro"]
         if any(word in message_lower for word in address_words):
             return "provide_address"
 

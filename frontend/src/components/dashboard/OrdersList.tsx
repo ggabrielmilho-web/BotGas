@@ -53,11 +53,16 @@ export function OrdersList() {
 
   const fetchOrders = async () => {
     try {
-      const params = filter ? { status: filter } : {};
-      const response = await api.get('/dashboard/orders', { params });
-      setOrders(response.data);
+      const url = filter
+        ? `/api/v1/dashboard/orders?status=${filter}`
+        : '/api/v1/dashboard/orders';
+      console.log('🔍 Buscando pedidos em:', url);
+      const response = await api.get(url);
+      console.log('✅ Resposta recebida:', response);
+      setOrders(Array.isArray(response) ? response : []);
     } catch (error) {
-      console.error('Erro ao buscar pedidos:', error);
+      console.error('❌ Erro ao buscar pedidos:', error);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -74,7 +79,7 @@ export function OrdersList() {
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
-      await api.put(`/dashboard/orders/${orderId}/status`, null, {
+      await api.put(`/api/v1/dashboard/orders/${orderId}/status`, null, {
         params: { status: newStatus },
       });
       fetchOrders(); // Atualizar lista
@@ -87,9 +92,12 @@ export function OrdersList() {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <p className="ml-2">Carregando pedidos...</p>
       </div>
     );
   }
+
+  console.log('🎯 OrdersList renderizado com', orders.length, 'pedidos');
 
   return (
     <div className="space-y-4">
@@ -179,15 +187,15 @@ export function OrdersList() {
                 <div className="border-t pt-2 space-y-1">
                   <div className="flex justify-between text-sm">
                     <span>Subtotal:</span>
-                    <span>R$ {order.subtotal.toFixed(2)}</span>
+                    <span>R$ {Number(order.subtotal).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>Taxa de Entrega:</span>
-                    <span>R$ {order.delivery_fee.toFixed(2)}</span>
+                    <span>R$ {Number(order.delivery_fee).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-bold">
                     <span>Total:</span>
-                    <span>R$ {order.total.toFixed(2)}</span>
+                    <span>R$ {Number(order.total).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Pagamento:</span>
@@ -247,3 +255,4 @@ export function OrdersList() {
     </div>
   );
 }
+

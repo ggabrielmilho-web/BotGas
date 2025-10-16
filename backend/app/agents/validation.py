@@ -81,7 +81,7 @@ Está correto? Podemos continuar com o pedido?"""
                     intent="address_validated",
                     next_agent="order",
                     context_updates={
-                        "stage": "building_order",
+                        "stage": "confirming_order",
                         "delivery_address": validation_result,
                         "delivery_fee": fee
                     },
@@ -174,39 +174,67 @@ Gostaria de:
     ) -> Dict[str, Any]:
         """Validate by neighborhood (manual cadastro)"""
 
-        # Extract neighborhood from address using Google Maps
+        # Strategy 1: Try to extract neighborhood from message text directly
+        # This is faster and works even without Google Maps
+        address_lower = address.lower()
+
+        # Get all neighborhood configs for this tenant
+        all_neighborhoods = db.query(NeighborhoodConfig).filter(
+            NeighborhoodConfig.tenant_id == tenant_id,
+            NeighborhoodConfig.is_active == True
+        ).all()
+
+        # Try to find neighborhood name in the address text
+        for neighborhood_config in all_neighborhoods:
+            neighborhood_name_lower = neighborhood_config.neighborhood_name.lower()
+            if neighborhood_name_lower in address_lower:
+                # Found neighborhood in address text!
+                logger.info(f"Neighborhood found in text: {neighborhood_config.neighborhood_name}")
+
+                # Complete address with city and state from neighborhood config
+                normalized_address = f"{address}, {neighborhood_config.city}, {neighborhood_config.state}"
+
+                return {
+                    "is_deliverable": True,
+                    "normalized_address": normalized_address,
+                    "coordinates": {"lat": 0, "lng": 0},  # No coordinates in this mode
+                    "neighborhood": neighborhood_config.neighborhood_name,
+                    "city": neighborhood_config.city,
+                    "state": neighborhood_config.state,
+                    "delivery_fee": float(neighborhood_config.delivery_fee),
+                    "delivery_time": neighborhood_config.delivery_time_minutes,
+                    "validation_mode": "neighborhood_text"
+                }
+
+        # Strategy 2: Fallback to Google Maps if neighborhood not found in text
         geocode_result = await self._geocode_address(address)
 
-        if not geocode_result:
-            return {
-                "is_deliverable": False,
-                "reason": "Endereço não encontrado"
-            }
+        if geocode_result:
+            neighborhood = geocode_result.get("neighborhood", "").lower()
+            city = geocode_result.get("city", "").lower()
 
-        neighborhood = geocode_result.get("neighborhood", "").lower()
-        city = geocode_result.get("city", "").lower()
+            # Find matching neighborhood config
+            neighborhood_config = db.query(NeighborhoodConfig).filter(
+                NeighborhoodConfig.tenant_id == tenant_id,
+                NeighborhoodConfig.is_active == True,
+                NeighborhoodConfig.neighborhood_name.ilike(f"%{neighborhood}%")
+            ).first()
 
-        # Find matching neighborhood config
-        neighborhood_config = db.query(NeighborhoodConfig).filter(
-            NeighborhoodConfig.tenant_id == tenant_id,
-            NeighborhoodConfig.is_active == True,
-            NeighborhoodConfig.neighborhood_name.ilike(f"%{neighborhood}%")
-        ).first()
+            if neighborhood_config:
+                return {
+                    "is_deliverable": True,
+                    "normalized_address": geocode_result["formatted_address"],
+                    "coordinates": geocode_result["coordinates"],
+                    "neighborhood": neighborhood_config.neighborhood_name,
+                    "delivery_fee": float(neighborhood_config.delivery_fee),
+                    "delivery_time": neighborhood_config.delivery_time_minutes,
+                    "validation_mode": "neighborhood_geocoded"
+                }
 
-        if not neighborhood_config:
-            return {
-                "is_deliverable": False,
-                "reason": f"Bairro '{neighborhood}' não está em nossa área de entrega"
-            }
-
+        # Neither strategy worked
         return {
-            "is_deliverable": True,
-            "normalized_address": geocode_result["formatted_address"],
-            "coordinates": geocode_result["coordinates"],
-            "neighborhood": neighborhood_config.neighborhood_name,
-            "delivery_fee": float(neighborhood_config.delivery_fee),
-            "delivery_time": neighborhood_config.delivery_time_minutes,
-            "validation_mode": "neighborhood"
+            "is_deliverable": False,
+            "reason": "Não consegui identificar o bairro. Por favor, informe o bairro claramente (ex: Centro, Jardins, Vila Mariana)"
         }
 
     async def _validate_by_radius(
