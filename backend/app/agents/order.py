@@ -14,6 +14,11 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# Product synonyms mapping for better recognition
+PRODUCT_SYNONYMS = {
+    "gas": ["gas", "gás", "botijao", "botijão", "p13", "13kg", "13 kg", "botija"],
+}
+
 
 class OrderAgent(BaseAgent):
     """
@@ -320,20 +325,33 @@ Rua, número, bairro""",
                     "quantity": 1
                 }
 
-        # Try to match product name
+        # Try to match product name (exact or partial)
         matched_product = None
         for product in products:
+            # Exact name match
             if product.name.lower() in message_lower:
                 matched_product = product
                 break
 
+            # Partial word match (>3 chars)
+            words = product.name.lower().split()
+            if any(word in message_lower for word in words if len(word) > 3):
+                matched_product = product
+                break
+
+        # Try synonyms if no direct match
         if not matched_product:
-            # Try partial match
-            for product in products:
-                words = product.name.lower().split()
-                if any(word in message_lower for word in words if len(word) > 3):
-                    matched_product = product
-                    break
+            for category, synonyms in PRODUCT_SYNONYMS.items():
+                if any(syn in message_lower for syn in synonyms):
+                    # Found a synonym - try to match with product by category
+                    # For now, assume "gas" matches "Botijão" products
+                    for product in products:
+                        product_lower = product.name.lower()
+                        if "botijão" in product_lower or "botijao" in product_lower or "p13" in product_lower:
+                            matched_product = product
+                            break
+                    if matched_product:
+                        break
 
         if not matched_product:
             return None

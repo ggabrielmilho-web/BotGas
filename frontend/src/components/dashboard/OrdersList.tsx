@@ -79,12 +79,12 @@ export function OrdersList() {
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
-      await api.put(`/api/v1/dashboard/orders/${orderId}/status`, null, {
-        params: { status: newStatus },
-      });
+      console.log('🔄 Atualizando pedido', orderId, 'para status:', newStatus);
+      await api.put(`/api/v1/dashboard/orders/${orderId}/status?status=${newStatus}`);
+      console.log('✅ Status atualizado com sucesso');
       fetchOrders(); // Atualizar lista
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
+      console.error('❌ Erro ao atualizar status:', error);
     }
   };
 
@@ -177,9 +177,7 @@ export function OrdersList() {
                 <div>
                   <h4 className="font-semibold text-sm">Endereço:</h4>
                   <p className="text-sm text-muted-foreground">
-                    {order.delivery_address.address}
-                    {order.delivery_address.neighborhood &&
-                      ` - ${order.delivery_address.neighborhood}`}
+                    {order.delivery_address.normalized_address || order.delivery_address.address || 'Endereço não informado'}
                   </p>
                 </div>
 
