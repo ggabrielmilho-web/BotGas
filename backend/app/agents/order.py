@@ -273,6 +273,8 @@ Rua, número, bairro""",
         """
         Process order with pre-extracted data from MessageExtractor
 
+        MODIFICAÇÃO: Adiciona validação de contexto antes de processar
+
         Args:
             extracted_info: Information extracted by fine-tuned model
             context: AgentContext
@@ -282,6 +284,49 @@ Rua, número, bairro""",
             AgentResponse
         """
         try:
+            # ================================================================
+            # NOVA VALIDAÇÃO: Verificar contexto antes de adicionar produto
+            # ================================================================
+
+            # Importar context manager
+            from app.services.context_manager import ConversationContext
+
+            # Criar contexto
+            conv_context = ConversationContext(
+                session_data=context.session_data,
+                message_history=context.message_history
+            )
+
+            # Se bot está aguardando decisão E última mensagem parece negação
+            # NÃO adicionar produto (previne duplicação)
+            if conv_context.awaiting_user_decision:
+                last_question = conv_context.last_bot_question.lower()
+
+                # Verificar se bot perguntou sobre adicionar mais
+                if "deseja adicionar mais" in last_question or "quer adicionar" in last_question:
+                    logger.warning(
+                        "OrderAgent: Bot perguntou 'adicionar mais?' mas foi chamado mesmo assim. "
+                        "Isso indica problema no roteamento. Redirecionando para finalização..."
+                    )
+
+                    # Redirecionar para pedir endereço
+                    return AgentResponse(
+                        text="""Entendi! Vamos finalizar seu pedido.
+
+Para continuar, preciso do seu endereço de entrega.
+
+Por favor, me envie:
+📍 Rua, número, bairro""",
+                        intent="finalize_order",
+                        next_agent="validation",
+                        context_updates={"stage": "awaiting_address"},
+                        should_end=False
+                    )
+
+            # ================================================================
+            # CÓDIGO ORIGINAL CONTINUA AQUI
+            # ================================================================
+
             # Get product information from extracted_info
             product_info = extracted_info.get("product", {})
             product_name = product_info.get("name", "")

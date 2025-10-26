@@ -10,6 +10,8 @@ from app.agents.base import BaseAgent, AgentContext, AgentResponse
 from app.services.intervention import InterventionService
 from app.services.audio_processor import AudioProcessor
 from app.agents.message_extractor import MessageExtractor
+from app.services.context_manager import ConversationContext
+from app.services.intent_classifier import IntentClassifier
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ class MasterAgent(BaseAgent):
         super().__init__(model_name="gpt-4-turbo-preview", temperature=0.7)
         self.audio_processor = AudioProcessor()
         self.message_extractor = MessageExtractor()
+        self.intent_classifier = IntentClassifier()
 
     async def process(self, message: Dict[str, Any], context: AgentContext, db) -> Optional[AgentResponse]:
         """
@@ -185,78 +188,183 @@ class MasterAgent(BaseAgent):
         context: AgentContext,
         db
     ) -> AgentResponse:
-        """Route message to appropriate agent based on extracted_info and intent"""
+        """
+        Roteamento INTELIGENTE com contexto
 
-        # Import agents here to avoid circular imports
+        Prioridade de decisão:
+        1. Contexto conversacional (bot perguntou algo? cliente respondeu?)
+        2. Intent do usuário (saudação, ajuda, etc)
+        3. Address com alta confidence (se já tem produto no carrinho)
+        4. Product com alta confidence (validado pelo contexto)
+        5. Payment com alta confidence
+        6. Fallback para attendance
+        """
+
+        # Import agents
         from app.agents.attendance import AttendanceAgent
         from app.agents.validation import ValidationAgent
         from app.agents.order import OrderAgent
         from app.agents.payment import PaymentAgent
 
-        # Determine current conversation stage
-        stage = context.session_data.get("stage", "greeting")
-        intent = context.current_intent
-
-        print(f"\n{'='*80}")
-        print(f"ROUTING DEBUG")
-        print(f"Intent: {intent}")
-        print(f"Stage: {stage}")
-        print(f"Message: {message[:50]}")
-        print(f"Extracted - Product: {extracted_info['product']['name']} (conf: {extracted_info['product']['confidence']:.2f})")
-        print(f"Extracted - Address: conf {extracted_info['address']['confidence']:.2f}")
-        print(f"Extracted - Payment: {extracted_info['payment']['method']} (conf: {extracted_info['payment']['confidence']:.2f})")
-        print(f"{'='*80}\n")
-
-        logger.info(
-            f"Routing - Intent: {intent}, Stage: {stage}, "
-            f"Product conf: {extracted_info['product']['confidence']:.2f}, "
-            f"Address conf: {extracted_info['address']['confidence']:.2f}"
+        # 1. Criar context manager para extrair informações do estado
+        conv_context = ConversationContext(
+            session_data=context.session_data,
+            message_history=context.message_history
         )
 
-        # INTELLIGENT ROUTING based on extracted_info confidence scores
-        # Priority order:
-        # 1. Intent-based (greeting, help, etc)
-        # 2. Extracted data with high confidence
-        # 3. Stage-based fallback
-        # 4. Default to attendance
+        # Log contexto para debugging
+        context_summary = conv_context.get_summary()
+        logger.info(f"Context: {context_summary}")
 
-        # 1. Greeting / Product inquiry / Help (always handle these first)
-        if intent in ["greeting", "product_inquiry", "help"]:
-            print(f"-> AttendanceAgent (intent: {intent})")
+        # 2. Classificar intent considerando contexto
+        intent = await self.intent_classifier.classify(
+            message=message,
+            last_bot_message=conv_context.last_bot_question
+        )
+
+        logger.info(
+            f"Routing - Intent: {intent}, Stage: {conv_context.current_stage}, "
+            f"Has items: {conv_context.has_items_in_cart}, "
+            f"Awaiting decision: {conv_context.awaiting_user_decision}"
+        )
+
+        # ========================================================================
+        # PRIORIDADE 1: BOT PERGUNTOU ALGO E CLIENTE RESPONDEU
+        # ========================================================================
+
+        if conv_context.awaiting_user_decision:
+            logger.info("Bot está aguardando decisão do usuário")
+
+            if intent == "answer_yes":
+                # Cliente quer continuar adicionando produtos
+                logger.info("Cliente confirmou (answer_yes) → AttendanceAgent (mostrar produtos)")
+                agent = AttendanceAgent()
+                return await agent.process(message, context)
+
+            elif intent == "answer_no":
+                # Cliente quer finalizar/parar de adicionar
+                logger.info("Cliente negou/finalizou (answer_no)")
+
+                if conv_context.has_items_in_cart:
+                    # Tem itens → pedir endereço
+                    logger.info("Tem itens no carrinho → ValidationAgent (pedir endereço)")
+                    agent = ValidationAgent()
+                    return await agent.ask_for_address(context)
+                else:
+                    # Não tem itens → voltar ao início
+                    logger.info("Carrinho vazio → AttendanceAgent")
+                    agent = AttendanceAgent()
+                    return await agent.process(message, context)
+
+        # ========================================================================
+        # PRIORIDADE 2: INTENTS ESPECÍFICOS (sempre tratados primeiro)
+        # ========================================================================
+
+        if intent == "greeting":
+            logger.info("Intent: greeting → AttendanceAgent")
             agent = AttendanceAgent()
             return await agent.process(message, context)
 
-        # 2. Product detected with high confidence -> OrderAgent
-        if extracted_info["product"]["confidence"] > 0.7:
-            print(f"-> OrderAgent (product detected: {extracted_info['product']['name']})")
-            agent = OrderAgent()
-            return await agent.process_with_extracted_data(extracted_info, context, db)
+        if intent == "product_inquiry":
+            logger.info("Intent: product_inquiry → AttendanceAgent")
+            agent = AttendanceAgent()
+            return await agent.process(message, context)
 
-        # 3. Address detected with high confidence -> ValidationAgent
-        if extracted_info["address"]["confidence"] > 0.7 or stage == "awaiting_address":
-            print("-> ValidationAgent (address detected)")
+        if intent == "help":
+            logger.info("Intent: help → AttendanceAgent")
+            agent = AttendanceAgent()
+            return await agent.process(message, context)
+
+        # ========================================================================
+        # PRIORIDADE 3: ENDEREÇO DETECTADO (se já tem produto no carrinho)
+        # ========================================================================
+
+        if (extracted_info["address"]["confidence"] > 0.7
+            and conv_context.has_items_in_cart):
+            logger.info(
+                f"Address detected (conf: {extracted_info['address']['confidence']:.2f}) "
+                f"and has items → ValidationAgent"
+            )
             agent = ValidationAgent()
             return await agent.process_with_extracted_data(extracted_info, context, db)
 
-        # 4. Payment detected with high confidence -> PaymentAgent
-        if extracted_info["payment"]["confidence"] > 0.7 or stage == "payment":
-            print(f"-> PaymentAgent (payment: {extracted_info['payment']['method']})")
+        # ========================================================================
+        # PRIORIDADE 4: PRODUTO DETECTADO (validar contexto antes!)
+        # ========================================================================
+
+        if extracted_info["product"]["confidence"] > 0.7:
+            logger.info(
+                f"Product detected: {extracted_info['product']['name']} "
+                f"(conf: {extracted_info['product']['confidence']:.2f})"
+            )
+
+            # VALIDAÇÃO: Se bot acabou de perguntar "deseja adicionar mais?"
+            # E intent foi classificado como "answer_no"
+            # NÃO adicionar produto (mesmo com confidence alta)
+
+            if conv_context.awaiting_user_decision and intent == "answer_no":
+                logger.warning(
+                    "VALIDAÇÃO FALHOU: Product confidence alto MAS intent=answer_no. "
+                    "Cliente não quer adicionar produto. Redirecionando..."
+                )
+
+                if conv_context.has_items_in_cart:
+                    # Pedir endereço
+                    agent = ValidationAgent()
+                    return await agent.ask_for_address(context)
+                else:
+                    # Voltar ao início
+                    agent = AttendanceAgent()
+                    return await agent.process(message, context)
+
+            # Contexto OK → processar produto
+            logger.info("Contexto validado → OrderAgent")
+            agent = OrderAgent()
+            return await agent.process_with_extracted_data(extracted_info, context, db)
+
+        # ========================================================================
+        # PRIORIDADE 5: PAGAMENTO DETECTADO
+        # ========================================================================
+
+        if extracted_info["payment"]["confidence"] > 0.7:
+            logger.info(
+                f"Payment detected: {extracted_info['payment']['method']} "
+                f"(conf: {extracted_info['payment']['confidence']:.2f}) → PaymentAgent"
+            )
             agent = PaymentAgent()
             return await agent.process_with_extracted_data(extracted_info, context, db)
 
-        # 5. Stage-based routing (fallback for mid-conversation)
+        # ========================================================================
+        # PRIORIDADE 6: STAGE-BASED ROUTING (fallback)
+        # ========================================================================
+
+        stage = conv_context.current_stage
+
         if stage == "building_order":
-            print("-> OrderAgent (stage: building_order)")
+            logger.info("Stage: building_order → OrderAgent")
             agent = OrderAgent()
             return await agent.process(message, context)
 
         if stage == "confirming_order":
-            print("-> OrderAgent (stage: confirming_order)")
+            logger.info("Stage: confirming_order → OrderAgent")
             agent = OrderAgent()
             return await agent.process(message, context)
 
-        # 6. Default to attendance agent for general messages
-        print(f"-> AttendanceAgent (DEFAULT)")
+        if stage == "awaiting_address":
+            logger.info("Stage: awaiting_address → ValidationAgent")
+            agent = ValidationAgent()
+            return await agent.process(message, context)
+
+        if stage == "payment":
+            logger.info("Stage: payment → PaymentAgent")
+            agent = PaymentAgent()
+            return await agent.process(message, context)
+
+        # ========================================================================
+        # FALLBACK: AttendanceAgent
+        # ========================================================================
+
+        logger.info("Fallback → AttendanceAgent")
         agent = AttendanceAgent()
         return await agent.process(message, context)
 

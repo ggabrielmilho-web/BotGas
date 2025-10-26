@@ -35,6 +35,48 @@ class ValidationAgent(BaseAgent):
         self.gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
         self.cache_duration_days = 30
 
+    async def ask_for_address(self, context: AgentContext) -> AgentResponse:
+        """
+        Pede endereço de entrega ao cliente
+
+        Usado quando cliente finaliza pedido e não forneceu endereço ainda.
+
+        Args:
+            context: Contexto da conversa
+
+        Returns:
+            AgentResponse pedindo endereço
+        """
+
+        # Verificar se já tem endereço no contexto
+        if context.session_data.get("delivery_address"):
+            # Já tem endereço, pedir confirmação
+            address_info = context.session_data["delivery_address"]
+            return AgentResponse(
+                text=f"""Endereço confirmado anteriormente:
+{address_info.get('normalized_address', 'Endereço registrado')}
+
+Deseja usar este endereço?""",
+                intent="confirm_address",
+                next_agent="validation",
+                context_updates={"stage": "confirming_address"},
+                should_end=False
+            )
+
+        # Não tem endereço, solicitar
+        return AgentResponse(
+            text="""Para finalizar o pedido, preciso do seu endereço de entrega.
+
+Por favor, me envie:
+📍 Rua, número, bairro e cidade
+
+Exemplo: Rua das Flores, 123, Centro, São Paulo""",
+            intent="address_needed",
+            next_agent="validation",
+            context_updates={"stage": "awaiting_address"},
+            should_end=False
+        )
+
     async def process(self, message: str, context: AgentContext) -> AgentResponse:
         """Process address validation"""
 
