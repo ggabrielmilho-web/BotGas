@@ -1,0 +1,16 @@
+# Logs de teste
+*.log
+test_*.log
+
+# Resultados de teste
+test_results/
+*.json
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ambiente virtual (se criar local)
+venv/
+env/

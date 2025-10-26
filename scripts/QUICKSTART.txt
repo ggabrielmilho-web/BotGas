@@ -1,0 +1,48 @@
+========================================
+  QUICKSTART - Scripts de Teste
+========================================
+
+1. CHAT INTERATIVO
+   cd C:\Phyton-Projetos\BotGas
+   python scripts/test_chat.py
+
+2. TESTES AUTOMATIZADOS
+   cd C:\Phyton-Projetos\BotGas
+   python scripts/test_prompts.py
+
+========================================
+COMANDOS NO CHAT:
+- sair       = Encerra
+- limpar     = Reseta conversa
+- Ctrl+C     = For ça encerramento
+
+========================================
+EXEMPLO DE CONVERSA:
+
+Você: Olá
+Bot: Olá! Seja bem-vindo...
+
+Você: Quero comprar uma botija
+Bot: Claro! Temos...
+
+Você: Meu endereço é Rua A, 100
+Bot: Perfeito...
+
+========================================
+TROUBLESHOOTING:
+
+Erro: ModuleNotFoundError
+→ Execute da raiz: cd C:\Phyton-Projetos\BotGas
+
+Erro: OpenAI API key not found
+→ Verifique .env na raiz
+
+Erro: No module langchain
+→ pip install -r backend/requirements.txt
+
+========================================
+DOCUMENTAÇÃO COMPLETA:
+→ scripts/README.md
+→ scripts/COMO_USAR.md
+
+========================================

@@ -264,6 +264,118 @@ Rua, número, bairro""",
         finally:
             db.close()
 
+    async def process_with_extracted_data(
+        self,
+        extracted_info: dict,
+        context: AgentContext,
+        db: Session
+    ) -> AgentResponse:
+        """
+        Process order with pre-extracted data from MessageExtractor
+
+        Args:
+            extracted_info: Information extracted by fine-tuned model
+            context: AgentContext
+            db: Database session
+
+        Returns:
+            AgentResponse
+        """
+        try:
+            # Get product information from extracted_info
+            product_info = extracted_info.get("product", {})
+            product_name = product_info.get("name", "")
+            quantity = product_info.get("quantity", 1)
+            confidence = product_info.get("confidence", 0.0)
+
+            # If confidence is low, ask customer to repeat
+            if confidence < 0.7:
+                return AgentResponse(
+                    text="Não entendi qual produto você quer. Pode repetir?",
+                    intent="clarification_needed",
+                    should_end=False
+                )
+
+            # Search for product in database
+            product = db.query(Product).filter(
+                Product.tenant_id == context.tenant_id,
+                Product.name.ilike(f"%{product_name}%"),
+                Product.is_available == True
+            ).first()
+
+            if not product:
+                # Try to search by partial match (P13, P45, etc)
+                for p in db.query(Product).filter(
+                    Product.tenant_id == context.tenant_id,
+                    Product.is_available == True
+                ).all():
+                    if product_name.lower() in p.name.lower():
+                        product = p
+                        break
+
+            if not product:
+                return AgentResponse(
+                    text=f"Desculpe, não encontrei o produto '{product_name}' em nosso catálogo.",
+                    intent="product_not_found",
+                    should_end=False
+                )
+
+            # Get current order
+            current_order = context.session_data.get("current_order", {
+                "items": [],
+                "subtotal": 0.0,
+                "delivery_fee": 0.0,
+                "total": 0.0
+            })
+
+            # Add item to order
+            result = await self._add_item_to_order(current_order, product, quantity, db)
+
+            if result["success"]:
+                current_order = result["order"]
+
+                # Check if address is in extracted_info
+                address_info = extracted_info.get("address", {})
+                address_confidence = address_info.get("confidence", 0.0)
+
+                # If address has high confidence, redirect to ValidationAgent
+                if address_confidence > 0.7:
+                    return AgentResponse(
+                        text=await self._build_order_summary(current_order, added_item=result.get("added_item")),
+                        intent="item_added_with_address",
+                        next_agent="validation",
+                        context_updates={
+                            "current_order": current_order,
+                            "stage": "awaiting_address"
+                        },
+                        should_end=False
+                    )
+
+                # Otherwise, ask if they want to add more items or finalize
+                response_text = await self._build_order_summary(current_order, added_item=result.get("added_item"))
+                response_text += "\n\nDeseja adicionar mais alguma coisa ou finalizar?"
+
+                return AgentResponse(
+                    text=response_text,
+                    intent="item_added",
+                    context_updates={"current_order": current_order},
+                    should_end=False
+                )
+            else:
+                return AgentResponse(
+                    text=result.get("error", "Não consegui adicionar o item. Pode repetir?"),
+                    intent="error",
+                    should_end=False
+                )
+
+        except Exception as e:
+            logger.error(f"Error in process_with_extracted_data: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao processar seu pedido. Pode tentar novamente?",
+                intent="error",
+                should_end=False
+            )
+
     async def _parse_order_intent(
         self,
         message: str,

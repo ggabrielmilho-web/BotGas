@@ -1,0 +1,1 @@
+winpty: error: cannot start 'C:\Users\note\AppData\Roaming\npm/node_modules/ngrok/bin/ngrok.exe': No such file or directory

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Cache
     ADDRESS_CACHE_DAYS: int = 30
 
+    # Fine-tuned Models
+    FINETUNED_EXTRACTOR_MODEL: str = "ft:gpt-4.1-mini-2025-04-14:carvalho-ia:botgas:CTt20bmy"
+    USE_FINETUNED_EXTRACTOR: bool = True  # Toggle para A/B test
+
     class Config:
         env_file = ".env"
 

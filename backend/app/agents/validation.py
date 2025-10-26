@@ -118,6 +118,131 @@ Gostaria de:
         finally:
             db.close()
 
+    async def process_with_extracted_data(
+        self,
+        extracted_info: dict,
+        context: AgentContext,
+        db: Session
+    ) -> AgentResponse:
+        """
+        Validate address with pre-extracted data from MessageExtractor
+
+        Args:
+            extracted_info: Information extracted by fine-tuned model
+            context: AgentContext
+            db: Database session
+
+        Returns:
+            AgentResponse
+        """
+        try:
+            # Get address information from extracted_info
+            address_info = extracted_info.get("address", {})
+            confidence = address_info.get("confidence", 0.0)
+
+            # If confidence is low, ask for address again
+            if confidence < 0.7:
+                return AgentResponse(
+                    text="""Não consegui identificar o endereço completo.
+
+Por favor, me envie:
+Rua, número, bairro
+
+Exemplo: Rua das Flores, 123, Centro""",
+                    intent="address_needed",
+                    should_end=False
+                )
+
+            # Build complete address string
+            street = address_info.get("street", "")
+            number = address_info.get("number", "")
+            neighborhood = address_info.get("neighborhood", "")
+            complement = address_info.get("complement")
+            reference = address_info.get("reference")
+
+            # Construct address string
+            address_parts = []
+            if street:
+                address_parts.append(street)
+            if number:
+                address_parts.append(number)
+            if neighborhood:
+                address_parts.append(neighborhood)
+
+            if not address_parts:
+                return AgentResponse(
+                    text="Não consegui identificar o endereço. Por favor, envie rua, número e bairro.",
+                    intent="address_needed",
+                    should_end=False
+                )
+
+            address = ", ".join(address_parts)
+
+            if complement:
+                address += f", {complement}"
+
+            # Validate delivery
+            validation_result = await self.validate_delivery(address, context.tenant_id, db)
+
+            if validation_result["is_deliverable"]:
+                # Success - address is in delivery area
+                fee = validation_result.get("delivery_fee", 0)
+                fee_str = f"R$ {fee:.2f}".replace(".", ",")
+
+                response_text = f"""✅ Ótimo! Entregamos no seu endereço!
+
+📍 *Endereço confirmado:*
+{validation_result['normalized_address']}"""
+
+                if reference:
+                    response_text += f"\n🏠 *Referência:* {reference}"
+
+                response_text += f"""
+
+🚚 *Taxa de entrega:* {fee_str if fee > 0 else 'GRÁTIS'}
+⏱️ *Tempo estimado:* {validation_result.get('delivery_time', 60)} minutos
+
+Está correto? Podemos continuar com o pedido?"""
+
+                return AgentResponse(
+                    text=response_text,
+                    intent="address_validated",
+                    next_agent="order",
+                    context_updates={
+                        "stage": "confirming_order",
+                        "delivery_address": validation_result,
+                        "delivery_fee": fee
+                    },
+                    should_end=False
+                )
+
+            else:
+                # Not deliverable
+                reason = validation_result.get("reason", "endereço fora da área de entrega")
+
+                response_text = f"""😔 Infelizmente não entregamos neste endereço.
+
+Motivo: {reason}
+
+Gostaria de:
+• Tentar outro endereço
+• Falar com um atendente"""
+
+                return AgentResponse(
+                    text=response_text,
+                    intent="address_rejected",
+                    requires_human=True,
+                    should_end=False
+                )
+
+        except Exception as e:
+            logger.error(f"Error in process_with_extracted_data: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao validar o endereço. Pode tentar novamente?",
+                intent="error",
+                should_end=False
+            )
+
     async def validate_delivery(
         self,
         address: str,

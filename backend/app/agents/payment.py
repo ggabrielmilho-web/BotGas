@@ -128,6 +128,120 @@ Obrigado pela preferência! 😊"""
         finally:
             db.close()
 
+    async def process_with_extracted_data(
+        self,
+        extracted_info: dict,
+        context: AgentContext,
+        db: Session
+    ) -> AgentResponse:
+        """
+        Process payment with pre-extracted data from MessageExtractor
+
+        Args:
+            extracted_info: Information extracted by fine-tuned model
+            context: AgentContext
+            db: Database session
+
+        Returns:
+            AgentResponse
+        """
+        try:
+            # Get tenant
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+
+            if not tenant:
+                return AgentResponse(
+                    text="Erro ao processar pagamento. Tente novamente.",
+                    intent="error",
+                    should_end=True
+                )
+
+            # Get payment information from extracted_info
+            payment_info = extracted_info.get("payment", {})
+            payment_method = payment_info.get("method", "unknown")
+            change_for = payment_info.get("change_for")
+            confidence = payment_info.get("confidence", 0.0)
+
+            # If confidence is low or method unknown, ask customer
+            if confidence < 0.7 or payment_method == "unknown":
+                current_order = context.session_data.get("current_order")
+                return AgentResponse(
+                    text=await self._build_payment_options(tenant, current_order),
+                    intent="payment_method_needed",
+                    should_end=False
+                )
+
+            # Get current order
+            current_order = context.session_data.get("current_order")
+
+            if not current_order or not current_order.get("items"):
+                return AgentResponse(
+                    text="Não encontrei um pedido ativo. Vamos começar de novo?",
+                    intent="error",
+                    should_end=False
+                )
+
+            # Add change information to context if present
+            if change_for:
+                context.session_data["change_for"] = change_for
+
+            # Process based on payment method
+            if payment_method == "pix":
+                response_text = await self._handle_pix_payment(tenant, current_order)
+            elif payment_method == "dinheiro":
+                response_text = await self._handle_cash_payment(tenant, current_order, change_for)
+            elif payment_method == "cartao":
+                response_text = await self._handle_card_payment(tenant, current_order)
+            else:
+                response_text = await self._build_payment_options(tenant, current_order)
+
+            # Create order in database
+            from app.agents.order import OrderAgent
+
+            order_agent = OrderAgent()
+            order_obj = await order_agent.create_order_in_db(
+                order=current_order,
+                context=context,
+                payment_method=payment_method,
+                db=db
+            )
+
+            # Add order confirmation
+            response_text += f"""
+
+✅ *Pedido Confirmado!*
+
+📱 *Número do pedido:* #{order_obj.order_number}
+
+Seu pedido foi registrado e já estamos preparando!
+
+Obrigado pela preferência! 😊"""
+
+            return AgentResponse(
+                text=response_text,
+                intent="payment_completed",
+                context_updates={
+                    "stage": "completed",
+                    "order_id": str(order_obj.id),
+                    "order_number": order_obj.order_number
+                },
+                should_end=True,
+                metadata={
+                    "order_id": str(order_obj.id),
+                    "order_number": order_obj.order_number,
+                    "total": current_order["total"]
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error in process_with_extracted_data: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao processar o pagamento. Um atendente vai entrar em contato.",
+                intent="error",
+                requires_human=True,
+                should_end=False
+            )
+
     async def _detect_payment_method(self, message: str, tenant: Tenant) -> Optional[str]:
         """Detect payment method from message"""
 
@@ -204,7 +318,7 @@ Seu pedido já foi registrado e será preparado!"""
 
         return message
 
-    async def _handle_cash_payment(self, tenant: Tenant, order: Dict[str, Any]) -> str:
+    async def _handle_cash_payment(self, tenant: Tenant, order: Dict[str, Any], change_for: Optional[float] = None) -> str:
         """Handle cash payment"""
 
         total_str = f"R$ {order['total']:.2f}".replace(".", ",")
@@ -213,7 +327,18 @@ Seu pedido já foi registrado e será preparado!"""
 
 💵 *Valor:* {total_str}
 
-Você vai pagar em dinheiro na entrega.
+Você vai pagar em dinheiro na entrega."""
+
+        if change_for:
+            change_str = f"R$ {change_for:.2f}".replace(".", ",")
+            change_amount = change_for - order['total']
+            change_amount_str = f"R$ {change_amount:.2f}".replace(".", ",")
+            message += f"""
+
+💵 *Troco para:* {change_str}
+💰 *Troco:* {change_amount_str}"""
+        else:
+            message += """
 
 💡 *Dica:* Prepare o valor exato ou nos avise se precisa de troco!"""
 

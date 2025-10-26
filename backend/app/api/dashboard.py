@@ -135,6 +135,22 @@ async def update_order_status(
     if status == 'delivered':
         order.delivered_at = datetime.now()
 
+        # End conversation when order is delivered
+        # Find the active conversation associated with this order
+        # Using JSONB contains operator (@>) to search for order_id
+        from sqlalchemy import cast, Text
+        conversation = db.query(Conversation).filter(
+            and_(
+                Conversation.tenant_id == current_tenant.id,
+                Conversation.status == 'active',
+                cast(Conversation.context, Text).like(f'%"order_id": "{str(order.id)}"%')
+            )
+        ).first()
+
+        if conversation:
+            conversation.status = 'ended'
+            conversation.ended_at = datetime.now()
+
     db.commit()
     db.refresh(order)
 

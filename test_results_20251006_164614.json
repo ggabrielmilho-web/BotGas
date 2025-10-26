@@ -1,0 +1,98 @@
+{
+  "timestamp": "2025-10-06T16:46:14.139963",
+  "phone": "5534999434613",
+  "instance": "tenant_6bf18c92-943e-43e9-a407-39a98e026165",
+  "conversation_id": null,
+  "results": [
+    {
+      "category": "1. Saudação",
+      "message": "Oi",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "1. Saudação",
+      "message": "Olá",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "1. Saudação",
+      "message": "Bom dia",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Quais produtos?",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Preços",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Quanto custa?",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Quero fazer um pedido",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Quero 1 botijão",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Uma botija por favor",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "4. Fornecimento de Endereço",
+      "message": "Rua das Flores, 123",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "4. Fornecimento de Endereço",
+      "message": "Av. Principal, 500 - Centro",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "5. Perguntas Gerais",
+      "message": "Qual seu horário?",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "5. Perguntas Gerais",
+      "message": "Fazem entrega?",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "6. Solicitação de Atendente",
+      "message": "Quero falar com atendente",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    },
+    {
+      "category": "6. Solicitação de Atendente",
+      "message": "Falar com uma pessoa",
+      "status": "❌ FALHA",
+      "error": "Não conseguiu enviar mensagem"
+    }
+  ]
+}

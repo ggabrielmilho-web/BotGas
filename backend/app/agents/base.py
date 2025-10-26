@@ -54,6 +54,32 @@ class BaseAgent(ABC):
         """Process a message and return a response"""
         pass
 
+    async def process_with_extracted_data(
+        self,
+        extracted_info: dict,
+        context: AgentContext,
+        db
+    ) -> AgentResponse:
+        """
+        Process message with pre-extracted data (optional)
+
+        This method allows agents to receive pre-extracted information
+        from MessageExtractor instead of parsing the raw message.
+
+        Override this method in agents that support extracted_info.
+        Default implementation falls back to regular process method.
+
+        Args:
+            extracted_info: Dict with product, address, payment, metadata
+            context: AgentContext
+            db: Database session
+
+        Returns:
+            AgentResponse
+        """
+        # Default: call regular process with empty message
+        return await self.process("", context)
+
     def _build_system_prompt(self, context: AgentContext) -> str:
         """Build system prompt for this agent"""
         return f"""Você é um assistente virtual para distribuidora de gás e água.

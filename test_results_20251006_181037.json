@@ -1,0 +1,98 @@
+{
+  "timestamp": "2025-10-06T18:10:37.710224",
+  "phone": "553496554613",
+  "instance": "tenant_6bf18c92-943e-43e9-a407-39a98e026165",
+  "conversation_id": null,
+  "results": [
+    {
+      "category": "1. Saudação",
+      "message": "Oi",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "1. Saudação",
+      "message": "Olá",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "1. Saudação",
+      "message": "Bom dia",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Quais produtos?",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Preços",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "2. Consulta de Produtos",
+      "message": "Quanto custa?",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Quero fazer um pedido",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Quero 1 botijão",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "3. Início de Pedido",
+      "message": "Uma botija por favor",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "4. Fornecimento de Endereço",
+      "message": "Rua das Flores, 123",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "4. Fornecimento de Endereço",
+      "message": "Av. Principal, 500 - Centro",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "5. Perguntas Gerais",
+      "message": "Qual seu horário?",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "5. Perguntas Gerais",
+      "message": "Fazem entrega?",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "6. Solicitação de Atendente",
+      "message": "Quero falar com atendente",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    },
+    {
+      "category": "6. Solicitação de Atendente",
+      "message": "Falar com uma pessoa",
+      "status": "❌ SEM RESPOSTA",
+      "error": "Bot não gerou resposta"
+    }
+  ]
+}
