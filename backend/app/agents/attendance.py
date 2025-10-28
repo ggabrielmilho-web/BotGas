@@ -247,3 +247,147 @@ Suas funções:
 - Guiar o cliente para fazer pedido
 
 Seja natural, use emojis moderadamente, e seja sempre educado."""
+
+    # ================================================================
+    # NOVOS MÉTODOS COM IA REAL (LLM responde diretamente)
+    # ================================================================
+
+    def _build_system_prompt_ai(self, context: AgentContext, db) -> str:
+        """
+        System prompt para AttendanceAgent responder com IA
+
+        NOVO: LLM responde TUDO (não usa templates hardcoded)
+        """
+        from app.database.models import Tenant, Product
+
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            products = db.query(Product).filter(
+                Product.tenant_id == context.tenant_id,
+                Product.is_available == True
+            ).order_by(Product.name).all()
+
+            # Formatar produtos
+            products_text = ""
+            for i, p in enumerate(products, 1):
+                products_text += f"{i}. {p.name} - R$ {p.price:.2f}"
+                if p.description:
+                    products_text += f" ({p.description})"
+                products_text += "\n"
+
+            # Informações da empresa
+            company_name = tenant.company_name if tenant else "Distribuidora"
+            phone = tenant.phone if tenant else ""
+
+            address_info = ""
+            if tenant and tenant.address and isinstance(tenant.address, dict):
+                street = tenant.address.get('street', '')
+                city = tenant.address.get('city', '')
+                if street or city:
+                    address_info = f"\n- Endereço: {street} - {city}"
+
+        except Exception as e:
+            logger.error(f"Error building system prompt: {e}")
+            company_name = "Distribuidora"
+            phone = ""
+            address_info = ""
+            products_text = "(erro ao carregar produtos)"
+
+        ctx = self._format_full_context(context)
+
+        # Detectar se é primeira interação
+        is_first_message = len(context.message_history) == 0
+
+        return f"""Você é o assistente virtual da {company_name}, uma distribuidora de gás e água via WhatsApp.
+
+{ctx}
+
+INFORMAÇÕES DA EMPRESA:
+- Nome: {company_name}
+- Telefone: {phone}{address_info}
+
+PRODUTOS DISPONÍVEIS:
+{products_text}
+
+RESPONSABILIDADES:
+1. Cumprimentar clientes (especialmente se for primeira mensagem)
+2. Apresentar produtos quando solicitado
+3. Responder dúvidas gerais sobre a empresa
+4. Guiar cliente para fazer pedido
+5. Ser amigável e prestativo
+
+REGRAS DE RESPOSTA:
+1. Se cliente SAÚDA (oi/olá/bom dia):
+   → Cumprimente de volta
+   → Apresente-se brevemente
+   → {"Pergunte como pode ajudar" if is_first_message else "Pergunte o que precisa"}
+
+2. Se cliente pergunta sobre PRODUTOS:
+   → Liste os produtos com preços
+   → Incentive a fazer pedido
+   → Exemplo: "Para fazer um pedido, me diga o que você quer!"
+
+3. Se cliente pede AJUDA ou tem DÚVIDA:
+   → Responda educadamente
+   → Se não souber, sugira falar com atendente
+
+4. Se cliente menciona PEDIDO/PRODUTO específico:
+   → Confirme interesse
+   → Sugira próximo passo (fazer pedido)
+
+IMPORTANTE:
+- Seja natural e amigável
+- Use emojis moderadamente (1-2 por mensagem)
+- Respostas curtas e objetivas
+- NUNCA invente informações (preços, horários, etc)
+- Se não souber algo, seja honesto
+
+RESPONDA DIRETAMENTE (não precisa JSON, apenas texto natural)"""
+
+    async def process_with_ai(self, message: str, context: AgentContext, db) -> AgentResponse:
+        """
+        NOVO: Process with AI-powered responses (LLM responde tudo)
+
+        Fluxo:
+        1. LLM recebe contexto completo + produtos
+        2. LLM responde diretamente (natural)
+        3. Sistema detecta próximo passo baseado na resposta
+        """
+        from langchain.schema import SystemMessage, HumanMessage
+
+        try:
+            system_prompt = self._build_system_prompt_ai(context, db)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Cliente: {message}")
+            ]
+
+            logger.info("🔄 AttendanceAgent calling LLM...")
+            response = await self._call_llm(messages)
+
+            # Detectar próximo passo baseado no contexto
+            message_lower = message.lower()
+            next_agent = None
+            stage = None
+
+            # Se cliente está interessado em produtos/pedido
+            product_keywords = ["quero", "pedido", "produto", "botijão", "p13", "preço", "quanto"]
+            if any(word in message_lower for word in product_keywords):
+                next_agent = "order"
+                stage = "building_order"
+
+            return AgentResponse(
+                text=response,
+                intent="attendance",
+                next_agent=next_agent,
+                context_updates={"stage": stage} if stage else {},
+                should_end=False
+            )
+
+        except Exception as e:
+            logger.error(f"Error in process_with_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema. Como posso ajudar?",
+                intent="error",
+                should_end=False
+            )
