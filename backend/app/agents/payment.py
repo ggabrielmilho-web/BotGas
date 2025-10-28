@@ -572,3 +572,16 @@ Obrigado pela preferência! 😊"""
                 intent="error",
                 should_end=False
             )
+
+    async def _execute_decision(self, decision: dict, context: AgentContext) -> AgentResponse:
+        """
+        Wrapper para satisfazer BaseAgent abstrato
+
+        Chama _execute_decision_ai() com db do contexto
+        """
+        from app.database.base import get_db
+        db = next(get_db())
+        try:
+            return await self._execute_decision_ai(decision, context, db)
+        finally:
+            db.close()
