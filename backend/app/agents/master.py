@@ -491,6 +491,7 @@ RESPONDA **APENAS** EM JSON (não adicione texto antes ou depois):
         Executa decisão do LLM: roteia para agente escolhido
 
         NOVO: Implementação do método abstrato do BaseAgent
+        ATUALIZADO: Chama métodos *_with_ai() dos agentes (não process() antigo)
         """
         agente_nome = decision.get("agente", "AttendanceAgent")
         raciocinio = decision.get("raciocinio", "")
@@ -503,22 +504,46 @@ RESPONDA **APENAS** EM JSON (não adicione texto antes ou depois):
         from app.agents.validation import ValidationAgent
         from app.agents.payment import PaymentAgent
 
-        # Instanciar agente escolhido
-        if agente_nome == "AttendanceAgent":
-            agent = AttendanceAgent()
-        elif agente_nome == "OrderAgent":
-            agent = OrderAgent()
-        elif agente_nome == "ValidationAgent":
-            agent = ValidationAgent()
-        elif agente_nome == "PaymentAgent":
-            agent = PaymentAgent()
-        else:
-            # Fallback
-            logger.warning(f"⚠️ Agente desconhecido: {agente_nome}. Usando AttendanceAgent.")
-            agent = AttendanceAgent()
+        # Instanciar e chamar agente com IA (process_with_ai)
+        try:
+            if agente_nome == "AttendanceAgent":
+                agent = AttendanceAgent()
+                return await agent.process_with_ai(message_text, context, db)
 
-        # Chamar agente escolhido
-        return await agent.process(message_text, context)
+            elif agente_nome == "OrderAgent":
+                agent = OrderAgent()
+                return await agent.process_with_ai(message_text, context, db)
+
+            elif agente_nome == "ValidationAgent":
+                agent = ValidationAgent()
+                return await agent.process_with_ai(message_text, context, db)
+
+            elif agente_nome == "PaymentAgent":
+                agent = PaymentAgent()
+                return await agent.process_with_ai(message_text, context, db)
+
+            else:
+                # Fallback
+                logger.warning(f"⚠️ Agente desconhecido: {agente_nome}. Usando AttendanceAgent.")
+                agent = AttendanceAgent()
+                return await agent.process_with_ai(message_text, context, db)
+
+        except AttributeError as e:
+            # Se agente não tem process_with_ai, usar process() antigo
+            logger.warning(f"⚠️ Agente {agente_nome} não tem process_with_ai. Usando process() legado. Erro: {e}")
+
+            if agente_nome == "AttendanceAgent":
+                agent = AttendanceAgent()
+            elif agente_nome == "OrderAgent":
+                agent = OrderAgent()
+            elif agente_nome == "ValidationAgent":
+                agent = ValidationAgent()
+            elif agente_nome == "PaymentAgent":
+                agent = PaymentAgent()
+            else:
+                agent = AttendanceAgent()
+
+            return await agent.process(message_text, context)
 
     async def process_with_ai_routing(self, message: Dict[str, Any], context: AgentContext, db) -> Optional[AgentResponse]:
         """

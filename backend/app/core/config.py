@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     FINETUNED_EXTRACTOR_MODEL: str = "ft:gpt-4.1-mini-2025-04-14:carvalho-ia:botgas:CTt20bmy"
     USE_FINETUNED_EXTRACTOR: bool = True  # Toggle para A/B test
 
+    # AI Agents (NEW: Agentes com IA Real)
+    USE_AI_AGENTS: bool = False  # Toggle para ativar agentes com IA (não IF/ELSE)
+                                  # Quando True: usa process_with_ai_routing()
+                                  # Quando False: usa process() legado
+
     class Config:
         env_file = ".env"
 
