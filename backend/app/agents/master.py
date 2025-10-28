@@ -425,8 +425,196 @@ class MasterAgent(BaseAgent):
         agent = AttendanceAgent()
         return await agent.process(message, context)
 
+    def _build_system_prompt_ai(self, context: AgentContext, db) -> str:
+        """
+        System prompt para MasterAgent decidir roteamento com IA
+
+        NOVO: Usa LLM para decidir qual agente chamar (não IF/ELSE)
+        """
+        # Buscar dados do tenant
+        from app.database.models import Tenant
+
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            company_name = tenant.company_name if tenant else "Distribuidora"
+        except Exception as e:
+            logger.error(f"Error fetching tenant: {e}")
+            company_name = "Distribuidora"
+
+        # Contexto formatado
+        ctx = self._format_full_context(context)
+
+        return f"""Você é o ORQUESTRADOR do sistema de atendimento via WhatsApp da {company_name}.
+
+Sua ÚNICA responsabilidade é decidir QUAL agente especializado deve processar a mensagem do cliente.
+
+{ctx}
+
+AGENTES DISPONÍVEIS:
+1. **AttendanceAgent**: Saudações, apresentar produtos, dúvidas gerais sobre a empresa
+2. **OrderAgent**: Adicionar/remover itens do carrinho, gerenciar pedido
+3. **ValidationAgent**: Validar endereço de entrega (após cliente fornecer)
+4. **PaymentAgent**: Coletar forma de pagamento e finalizar pedido
+
+ANÁLISE NECESSÁRIA:
+1. O que o cliente está pedindo AGORA?
+2. Qual o CONTEXTO da conversa (o que foi discutido antes)?
+3. Se o bot fez uma pergunta, o cliente está RESPONDENDO ela?
+4. Qual agente é mais ADEQUADO para esta situação?
+
+REGRAS IMPORTANTES:
+- Se stage="confirming_order" E cliente CONFIRMA (sim/ok/pode/beleza/etc) → PaymentAgent (próximo é pagamento)
+- Se stage="building_order" E cliente CONFIRMA adicionar mais → AttendanceAgent (mostrar produtos)
+- Se stage="awaiting_address" → ValidationAgent
+- Se stage="payment" → PaymentAgent
+- Se cliente menciona PRODUTO → OrderAgent
+- Se cliente menciona ENDEREÇO → ValidationAgent
+- Se cliente SAÚDA ou pede INFO → AttendanceAgent
+
+ATENÇÃO: CONTEXTO > palavras isoladas
+- "pode seguir" após confirmar endereço = ir para pagamento
+- "pode seguir" sem contexto = pedir esclarecimento
+
+RESPONDA **APENAS** EM JSON (não adicione texto antes ou depois):
+{{
+    "raciocinio": "breve explicação da sua decisão (1 frase)",
+    "agente": "AttendanceAgent" | "OrderAgent" | "ValidationAgent" | "PaymentAgent",
+    "contexto_adicional": {{
+        "cliente_confirmando": true/false,
+        "cliente_finalizando": true/false,
+        "cliente_corrigindo": true/false
+    }}
+}}"""
+
+    async def _execute_decision(self, decision: dict, context: AgentContext, db, message_text: str) -> AgentResponse:
+        """
+        Executa decisão do LLM: roteia para agente escolhido
+
+        NOVO: Implementação do método abstrato do BaseAgent
+        """
+        agente_nome = decision.get("agente", "AttendanceAgent")
+        raciocinio = decision.get("raciocinio", "")
+
+        logger.info(f"🤖 MasterAgent decidiu: {agente_nome} | Razão: {raciocinio}")
+
+        # Importar agentes
+        from app.agents.attendance import AttendanceAgent
+        from app.agents.order import OrderAgent
+        from app.agents.validation import ValidationAgent
+        from app.agents.payment import PaymentAgent
+
+        # Instanciar agente escolhido
+        if agente_nome == "AttendanceAgent":
+            agent = AttendanceAgent()
+        elif agente_nome == "OrderAgent":
+            agent = OrderAgent()
+        elif agente_nome == "ValidationAgent":
+            agent = ValidationAgent()
+        elif agente_nome == "PaymentAgent":
+            agent = PaymentAgent()
+        else:
+            # Fallback
+            logger.warning(f"⚠️ Agente desconhecido: {agente_nome}. Usando AttendanceAgent.")
+            agent = AttendanceAgent()
+
+        # Chamar agente escolhido
+        return await agent.process(message_text, context)
+
+    async def process_with_ai_routing(self, message: Dict[str, Any], context: AgentContext, db) -> Optional[AgentResponse]:
+        """
+        NOVO: Process message with AI-powered routing (substitui process antigo)
+
+        Fluxo:
+        1. Verificar intervenção humana
+        2. Processar áudio se necessário
+        3. LLM decide roteamento (não IF/ELSE!)
+        4. Executar decisão
+        """
+        intervention_service = InterventionService(db)
+
+        # 1. Check human intervention status (manter lógica existente)
+        intervention_status = await intervention_service.check_intervention_status(
+            tenant_id=context.tenant_id,
+            customer_phone=context.customer_phone,
+            conversation_id=context.conversation_id
+        )
+
+        if intervention_status.get("is_active"):
+            await intervention_service.log_message_during_intervention(
+                conversation_id=context.conversation_id,
+                message={
+                    "content": message.get("content", ""),
+                    "type": message.get("type", "text"),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+
+            minutes_left = intervention_status.get("minutes_remaining", 0)
+            logger.info(
+                f"Message during intervention - {minutes_left}min remaining. "
+                f"Conversation: {context.conversation_id}"
+            )
+            return None
+
+        # 2. Process audio if needed (manter lógica existente)
+        message_text = ""
+        message_type = message.get("type", "text")
+
+        if message_type == "audio":
+            audio_result = await self.audio_processor.process_whatsapp_audio(
+                message.get("audio_data", {})
+            )
+
+            if not audio_result.get("success"):
+                return AgentResponse(
+                    text=audio_result.get("text", "Erro ao processar áudio"),
+                    intent="error",
+                    should_end=False
+                )
+
+            message_text = audio_result.get("text", "")
+            logger.info(f"Audio transcribed: {message_text[:100]}...")
+        else:
+            message_text = message.get("content", "")
+
+        # 3. Check if customer is requesting human intervention (manter lógica)
+        should_intervene = await intervention_service.should_auto_intervene(
+            message=message_text,
+            context=context.session_data
+        )
+
+        if should_intervene:
+            await intervention_service.start_intervention(
+                conversation_id=context.conversation_id,
+                tenant_id=context.tenant_id,
+                reason="Customer requested human assistance"
+            )
+
+            return AgentResponse(
+                text="Entendi! Vou chamar um atendente para falar com você. Só um momento! 😊",
+                intent="human_requested",
+                requires_human=True,
+                should_end=False
+            )
+
+        # 4. NOVO: LLM decide roteamento (substituindo IF/ELSE)
+        from langchain.schema import SystemMessage, HumanMessage
+
+        system_prompt = self._build_system_prompt_ai(context, db)
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Mensagem do cliente: {message_text}")
+        ]
+
+        logger.info("🔄 Calling LLM for routing decision...")
+        response = await self._call_llm(messages)
+        decision = self._parse_llm_response(response)
+
+        # 5. Executar decisão
+        return await self._execute_decision(decision, context, db, message_text)
+
     def _build_system_prompt(self, context: AgentContext) -> str:
-        """Build system prompt for master agent"""
+        """Build system prompt for master agent (legacy - kept for compatibility)"""
         return """Você é o orquestrador principal de um sistema de atendimento via WhatsApp.
 
 Suas responsabilidades:
