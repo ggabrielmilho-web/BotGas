@@ -370,3 +370,205 @@ Suas funções:
 - Confirmar pedido
 
 Seja claro e educado. Não valide pagamentos, apenas registre a forma escolhida."""
+
+    # ================================================================
+    # NOVOS MÉTODOS COM IA REAL (não IF/ELSE)
+    # ================================================================
+
+    def _build_system_prompt_ai(self, context: AgentContext, db) -> str:
+        """
+        System prompt para PaymentAgent detectar forma de pagamento com IA
+
+        NOVO: Usa LLM para detectar pagamento (não listas de palavras)
+        """
+        from app.database.models import Tenant
+
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            payment_methods = tenant.payment_methods or ["Dinheiro"]
+            pix_enabled = tenant.pix_enabled
+
+            # Pedido atual
+            current_order = context.session_data.get("current_order", {})
+            total = current_order.get("total", 0)
+        except Exception as e:
+            logger.error(f"Error building system prompt: {e}")
+            payment_methods = ["Dinheiro"]
+            pix_enabled = False
+            total = 0
+
+        ctx = self._format_full_context(context)
+
+        methods_text = "\n".join([f"- {m}" for m in payment_methods])
+
+        return f"""Você é responsável por coletar a FORMA DE PAGAMENTO do cliente.
+
+{ctx}
+
+VALOR TOTAL DO PEDIDO: R$ {total:.2f}
+
+FORMAS DE PAGAMENTO ACEITAS:
+{methods_text}
+{"- PIX (disponível)" if pix_enabled else ""}
+
+RESPONSABILIDADES:
+1. Detectar qual forma de pagamento o cliente escolheu
+2. Se for DINHEIRO, perguntar se precisa de troco
+3. Confirmar forma de pagamento
+
+REGRAS DE DETECÇÃO:
+1. Variações comuns:
+   - "pix" / "no pix" / "vou pagar no pix" = PIX
+   - "dinheiro" / "espécie" / "na entrega" / "cash" = Dinheiro
+   - "cartão" / "cartao" / "débito" / "credito" / "na maquininha" = Cartão
+   - "100 reais" (se total < 100) = Dinheiro com troco para R$ 100
+
+2. Se cliente menciona valor maior que o total:
+   - Assumir dinheiro com troco
+   - Exemplo: total R$ 65, cliente diz "100" = troco para R$ 100
+
+3. Se não conseguir detectar:
+   - Pedir esclarecimento educadamente
+
+RESPONDA **APENAS** EM JSON:
+{{
+    "metodo": "pix" | "dinheiro" | "cartao" | "desconhecido",
+    "troco_para": valor numérico ou null,
+    "confirmado": true/false,
+    "mensagem_cliente": "texto amigável da resposta",
+    "proximo_passo": "confirmar_pedido" | "pedir_troco" | "esclarecer"
+}}
+
+IMPORTANTE: Seja amigável e confirme antes de finalizar."""
+
+    async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
+        """
+        Executa decisão do LLM para processar pagamento
+
+        NOVO: Implementação com IA (não IF/ELSE)
+        """
+        try:
+            metodo = decision.get("metodo", "desconhecido")
+            mensagem = decision.get("mensagem_cliente", "")
+            troco_para = decision.get("troco_para")
+            confirmado = decision.get("confirmado", False)
+
+            logger.info(f"💳 PaymentAgent: Método={metodo}, Troco={troco_para}, Confirmado={confirmado}")
+
+            # Se não detectou ou não confirmou
+            if metodo == "desconhecido" or not confirmado:
+                tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+                current_order = context.session_data.get("current_order", {})
+
+                return AgentResponse(
+                    text=await self._build_payment_options(tenant, current_order),
+                    intent="payment_method_needed",
+                    context_updates={"stage": "payment"},
+                    should_end=False
+                )
+
+            # Método detectado e confirmado
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            current_order = context.session_data.get("current_order")
+
+            if not current_order or not current_order.get("items"):
+                return AgentResponse(
+                    text="Não encontrei um pedido ativo. Vamos começar de novo?",
+                    intent="error",
+                    should_end=False
+                )
+
+            # Adicionar troco ao contexto
+            if troco_para:
+                context.session_data["change_for"] = troco_para
+
+            # Processar baseado no método
+            if metodo == "pix":
+                response_text = await self._handle_pix_payment(tenant, current_order)
+            elif metodo == "dinheiro":
+                response_text = await self._handle_cash_payment(tenant, current_order, troco_para)
+            elif metodo == "cartao":
+                response_text = await self._handle_card_payment(tenant, current_order)
+            else:
+                return AgentResponse(
+                    text=await self._build_payment_options(tenant, current_order),
+                    intent="payment_method_needed",
+                    should_end=False
+                )
+
+            # Criar pedido no banco
+            from app.agents.order import OrderAgent
+            order_agent = OrderAgent()
+            order_obj = await order_agent.create_order_in_db(
+                order=current_order,
+                context=context,
+                payment_method=metodo,
+                db=db
+            )
+
+            # Confirmação
+            response_text += f"""
+
+✅ *Pedido Confirmado!*
+
+📱 *Número do pedido:* #{order_obj.order_number}
+
+Seu pedido foi registrado e já estamos preparando!
+
+Obrigado pela preferência! 😊"""
+
+            return AgentResponse(
+                text=response_text,
+                intent="payment_completed",
+                context_updates={
+                    "stage": "completed",
+                    "order_id": str(order_obj.id),
+                    "order_number": order_obj.order_number
+                },
+                should_end=True,
+                metadata={
+                    "order_id": str(order_obj.id),
+                    "order_number": order_obj.order_number,
+                    "total": current_order["total"]
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error in _execute_decision_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao processar o pagamento.",
+                intent="error",
+                should_end=False
+            )
+
+    async def process_with_ai(self, message: str, context: AgentContext, db) -> AgentResponse:
+        """
+        NOVO: Process with AI-powered payment detection (não IF/ELSE)
+
+        Fluxo:
+        1. LLM detecta forma de pagamento
+        2. Se dinheiro, detecta necessidade de troco
+        3. Confirma e cria pedido
+        """
+        from langchain.schema import SystemMessage, HumanMessage
+
+        try:
+            system_prompt = self._build_system_prompt_ai(context, db)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Cliente: {message}")
+            ]
+
+            logger.info("🔄 PaymentAgent calling LLM...")
+            response = await self._call_llm(messages)
+            decision = self._parse_llm_response(response)
+
+            return await self._execute_decision_ai(decision, context, db)
+
+        except Exception as e:
+            logger.error(f"Error in process_with_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema. Como você quer pagar?",
+                intent="error",
+                should_end=False
+            )
