@@ -391,3 +391,20 @@ RESPONDA DIRETAMENTE (não precisa JSON, apenas texto natural)"""
                 intent="error",
                 should_end=False
             )
+
+    async def _execute_decision(self, decision: dict, context: AgentContext) -> AgentResponse:
+        """
+        Implementação dummy para satisfazer BaseAgent abstrato
+
+        AttendanceAgent não usa decisões estruturadas - responde diretamente
+        via process_with_ai(). Este método nunca é chamado na prática.
+
+        Existe apenas para cumprir o contrato do BaseAgent.
+        """
+        # Fallback: se por algum motivo for chamado, retornar texto da decisão
+        logger.warning("AttendanceAgent._execute_decision() foi chamado (não deveria)")
+        return AgentResponse(
+            text=decision.get("texto", "Como posso ajudar?"),
+            intent="attendance",
+            should_end=False
+        )
