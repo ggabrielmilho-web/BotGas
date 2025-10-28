@@ -165,12 +165,25 @@ async def process_text_message(
         )
 
         # Process message with master agent
+        from app.core.config import settings
+
         master_agent = MasterAgent()
-        response = await master_agent.process(
-            message={"type": "text", "content": message_text},
-            context=agent_context,
-            db=db
-        )
+
+        # Use AI routing if enabled, otherwise use legacy system
+        if settings.USE_AI_AGENTS:
+            logger.info("🤖 Using AI-powered routing (process_with_ai_routing)")
+            response = await master_agent.process_with_ai_routing(
+                message={"type": "text", "content": message_text},
+                context=agent_context,
+                db=db
+            )
+        else:
+            logger.info("📌 Using legacy routing (process)")
+            response = await master_agent.process(
+                message={"type": "text", "content": message_text},
+                context=agent_context,
+                db=db
+            )
 
         # If agent returned a response, send it back to customer
         if response:
