@@ -51,7 +51,32 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def process(self, message: str, context: AgentContext) -> AgentResponse:
-        """Process a message and return a response"""
+        """
+        Process a message and return a response
+
+        NOTE: Most agents should override this method to use the new AI-based flow:
+        1. Build system prompt with _build_system_prompt()
+        2. Call LLM with _call_llm()
+        3. Parse JSON response with _parse_llm_response()
+        4. Execute decision with _execute_decision()
+        """
+        pass
+
+    @abstractmethod
+    async def _execute_decision(self, decision: dict, context: AgentContext) -> AgentResponse:
+        """
+        Execute decision made by LLM
+
+        Each agent must implement how to execute the decision returned by the LLM.
+        The decision is a parsed JSON dict from _parse_llm_response().
+
+        Args:
+            decision: Dict with LLM's decision (parsed JSON)
+            context: AgentContext
+
+        Returns:
+            AgentResponse
+        """
         pass
 
     async def process_with_extracted_data(
@@ -117,41 +142,91 @@ Sempre confirme informações importantes antes de prosseguir."""
             logger.error(f"Error calling LLM in {self.agent_name}: {e}")
             return "Desculpe, tive um problema ao processar sua mensagem. Pode repetir?"
 
-    def _detect_intent(self, message: str) -> str:
-        """Detect user intent from message"""
-        message_lower = message.lower()
+    # REMOVED: _detect_intent() method
+    # This was pure IF/ELSE with keyword lists
+    # Now replaced by LLM-based decision making in each agent
 
-        # Greetings
-        greetings = ["oi", "olá", "bom dia", "boa tarde", "boa noite", "alo", "alô"]
-        if any(word in message_lower for word in greetings):
-            return "greeting"
+    def _parse_llm_response(self, response_text: str) -> dict:
+        """
+        Parse resposta JSON do LLM
 
-        # Product inquiry
-        product_words = ["produto", "preço", "quanto custa", "valor", "cardápio", "menu"]
-        if any(word in message_lower for word in product_words):
-            return "product_inquiry"
+        LLM deve retornar JSON estruturado.
+        Este método extrai e valida o JSON.
+        """
+        import json
+        import re
 
-        # Order
-        order_words = ["quero", "pedido", "comprar", "pedir"]
-        if any(word in message_lower for word in order_words):
-            return "make_order"
+        try:
+            # Tentar parse direto
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # Se falhar, buscar JSON entre ```json e ```
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
 
-        # Address
-        address_words = ["endereço", "entregar", "entrega", "rua", "avenida", " av ", "av.", "número", "numero", "nº", "n°", "bairro", "centro"]
-        if any(word in message_lower for word in address_words):
-            return "provide_address"
+            # Se ainda falhar, buscar qualquer { ... }
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    pass
 
-        # Payment
-        payment_words = ["pagamento", "pagar", "pix", "dinheiro", "cartão"]
-        if any(word in message_lower for word in payment_words):
-            return "payment"
+            # Falha total
+            logger.error(f"Não foi possível parsear JSON: {response_text}")
+            return {"erro": "resposta_invalida", "texto": response_text}
 
-        # Help
-        help_words = ["ajuda", "help", "como funciona", "não entendi"]
-        if any(word in message_lower for word in help_words):
-            return "help"
+    def _format_full_context(self, context: AgentContext) -> str:
+        """
+        Formata contexto completo para o prompt
 
-        return "general"
+        Inclui:
+        - Dados da sessão
+        - Estado do carrinho
+        - Histórico de mensagens
+        - Informações do cliente
+        """
+        # Carrinho
+        current_order = context.session_data.get("current_order", {})
+        items = current_order.get("items", [])
+        cart_summary = f"{len(items)} item(s) - R$ {current_order.get('total', 0):.2f}" if items else "vazio"
+
+        # Stage
+        stage = context.session_data.get("stage", "início")
+
+        # Endereço
+        has_address = bool(context.session_data.get("delivery_address"))
+
+        # Histórico
+        history_text = self._format_history_text(context.message_history[-5:])
+
+        return f"""
+CONTEXTO ATUAL:
+- Stage: {stage}
+- Carrinho: {cart_summary}
+- Endereço validado: {has_address}
+- Cliente: {context.customer_phone}
+
+HISTÓRICO RECENTE (últimas 5 mensagens):
+{history_text}
+"""
+
+    def _format_history_text(self, messages: list) -> str:
+        """Formata histórico para texto legível"""
+        if not messages:
+            return "(nenhuma mensagem anterior)"
+
+        text = ""
+        for msg in messages:
+            role = "Cliente" if msg.get("role") == "user" else "Bot"
+            content = msg.get("content", "")[:100]
+            text += f"- {role}: {content}...\n"
+
+        return text
 
     def _update_context(self, context: AgentContext, updates: Dict[str, Any]) -> AgentContext:
         """Update context with new data"""
