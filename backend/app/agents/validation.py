@@ -643,3 +643,198 @@ Gostaria de:
             return message.strip()
 
         return None
+
+    # ================================================================
+    # NOVOS MÉTODOS COM IA REAL (não regex)
+    # ================================================================
+
+    def _build_system_prompt_ai(self, context: AgentContext, db) -> str:
+        """
+        System prompt para ValidationAgent extrair/validar endereço com IA
+
+        NOVO: Usa LLM para extrair endereço (não regex)
+        """
+        from app.database.models import Tenant, DeliveryArea
+
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            delivery_config = db.query(DeliveryArea).filter(
+                DeliveryArea.tenant_id == context.tenant_id
+            ).first()
+
+            mode = delivery_config.delivery_mode if delivery_config else "neighborhood"
+        except Exception as e:
+            logger.error(f"Error getting delivery config: {e}")
+            mode = "neighborhood"
+
+        ctx = self._format_full_context(context)
+
+        return f"""Você é responsável por EXTRAIR e VALIDAR endereços de entrega via WhatsApp.
+
+{ctx}
+
+MODO DE ENTREGA: {mode}
+
+RESPONSABILIDADES:
+1. Extrair endereço completo da mensagem do cliente
+2. Identificar componentes: rua, número, bairro, complemento, referência
+3. Detectar se o endereço está completo ou faltam dados
+4. Validar formato e clareza do endereço
+
+REGRAS DE EXTRAÇÃO:
+1. Endereço completo deve ter: rua/avenida + número + bairro
+2. Complemento (apto, bloco) e referência são opcionais
+3. Variações comuns:
+   - "morada 15" = endereço número 15
+   - "Rua ABC 123" = Rua ABC, número 123
+   - "av paulista 1000 bela vista" = Av Paulista 1000, Bela Vista
+   - "rua flores centro" (SEM número) = incompleto
+
+4. Se falta informação, identifique O QUE falta
+
+RESPONDA **APENAS** EM JSON:
+{{
+    "completo": true/false,
+    "rua": "nome da rua/avenida ou null",
+    "numero": "número ou null",
+    "bairro": "nome do bairro ou null",
+    "complemento": "apto/bloco ou null",
+    "referencia": "ponto de referência ou null",
+    "faltando": ["lista de campos faltantes"] ou [],
+    "mensagem_cliente": "texto amigável da resposta"
+}}
+
+IMPORTANTE: Se completo=false, pergunte educadamente O QUE falta."""
+
+    async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
+        """
+        Executa decisão do LLM para validar endereço
+
+        NOVO: Implementação com IA (não regex)
+        """
+        try:
+            completo = decision.get("completo", False)
+            mensagem = decision.get("mensagem_cliente", "")
+
+            if not completo:
+                # Endereço incompleto
+                faltando = decision.get("faltando", [])
+                logger.info(f"📍 ValidationAgent: Endereço incompleto. Faltando: {faltando}")
+
+                return AgentResponse(
+                    text=mensagem,
+                    intent="address_incomplete",
+                    context_updates={"stage": "awaiting_address"},
+                    should_end=False
+                )
+
+            # Endereço completo - montar string
+            rua = decision.get("rua", "")
+            numero = decision.get("numero", "")
+            bairro = decision.get("bairro", "")
+            complemento = decision.get("complemento")
+            referencia = decision.get("referencia")
+
+            address_parts = []
+            if rua:
+                address_parts.append(rua)
+            if numero:
+                address_parts.append(numero)
+            if bairro:
+                address_parts.append(bairro)
+
+            address = ", ".join(address_parts)
+            if complemento:
+                address += f", {complemento}"
+
+            logger.info(f"📍 ValidationAgent: Endereço extraído: {address}")
+
+            # Validar com Google Maps
+            validation_result = await self.validate_delivery(address, context.tenant_id, db)
+
+            if validation_result["is_deliverable"]:
+                # Sucesso
+                fee = validation_result.get("delivery_fee", 0)
+                fee_str = f"R$ {fee:.2f}".replace(".", ",")
+
+                response_text = f"""✅ Ótimo! Entregamos no seu endereço!
+
+📍 *Endereço confirmado:*
+{validation_result['normalized_address']}"""
+
+                if referencia:
+                    response_text += f"\n🏠 *Referência:* {referencia}"
+
+                response_text += f"""
+
+🚚 *Taxa de entrega:* {fee_str if fee > 0 else 'GRÁTIS'}
+⏱️ *Tempo estimado:* {validation_result.get('delivery_time', 60)} minutos
+
+Está correto? Podemos continuar com o pedido?"""
+
+                return AgentResponse(
+                    text=response_text,
+                    intent="address_validated",
+                    next_agent="order",
+                    context_updates={
+                        "stage": "confirming_order",
+                        "delivery_address": validation_result,
+                        "delivery_fee": fee
+                    },
+                    should_end=False
+                )
+            else:
+                # Não entrega
+                reason = validation_result.get("reason", "endereço fora da área")
+
+                return AgentResponse(
+                    text=f"""😔 Infelizmente não entregamos neste endereço.
+
+Motivo: {reason}
+
+Gostaria de tentar outro endereço?""",
+                    intent="address_rejected",
+                    requires_human=True,
+                    should_end=False
+                )
+
+        except Exception as e:
+            logger.error(f"Error in _execute_decision_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao validar o endereço.",
+                intent="error",
+                should_end=False
+            )
+
+    async def process_with_ai(self, message: str, context: AgentContext, db) -> AgentResponse:
+        """
+        NOVO: Process with AI-powered address extraction (não regex)
+
+        Fluxo:
+        1. LLM extrai componentes do endereço
+        2. Valida se está completo
+        3. Se completo, valida com Google Maps
+        4. Se incompleto, pede dados faltantes
+        """
+        from langchain.schema import SystemMessage, HumanMessage
+
+        try:
+            system_prompt = self._build_system_prompt_ai(context, db)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Cliente: {message}")
+            ]
+
+            logger.info("🔄 ValidationAgent calling LLM...")
+            response = await self._call_llm(messages)
+            decision = self._parse_llm_response(response)
+
+            return await self._execute_decision_ai(decision, context, db)
+
+        except Exception as e:
+            logger.error(f"Error in process_with_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema. Pode enviar seu endereço novamente?",
+                intent="error",
+                should_end=False
+            )
