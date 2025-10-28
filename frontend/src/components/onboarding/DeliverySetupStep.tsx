@@ -38,6 +38,12 @@ export default function DeliverySetupStep({ onComplete }: DeliverySetupStepProps
     { start: 5, end: 10, fee: 10, time: 45 },
     { start: 10, end: 20, fee: 20, time: 60 },
   ])
+  const [newRadiusTier, setNewRadiusTier] = useState({
+    start: '',
+    end: '',
+    fee: '',
+    time: '60',
+  })
 
   // Estados para modo Híbrido
   const [hybridNeighborhoods, setHybridNeighborhoods] = useState<
@@ -68,6 +74,47 @@ export default function DeliverySetupStep({ onComplete }: DeliverySetupStepProps
       },
     ])
     setNewNeighborhood({ name: '', fee: '', time: '60' })
+  }
+
+  const handleAddRadiusTier = () => {
+    const start = parseFloat(newRadiusTier.start)
+    const end = parseFloat(newRadiusTier.end)
+    const fee = parseFloat(newRadiusTier.fee)
+    const time = parseInt(newRadiusTier.time) || 60
+
+    // Validação
+    if (isNaN(start) || isNaN(end) || isNaN(fee)) {
+      setError('Preencha todos os campos da faixa de raio')
+      return
+    }
+
+    if (start >= end) {
+      setError('O KM inicial deve ser menor que o KM final')
+      return
+    }
+
+    if (start < 0 || end < 0) {
+      setError('Os valores de KM devem ser positivos')
+      return
+    }
+
+    // Verificar sobreposição com faixas existentes
+    const hasOverlap = radiusTiers.some((tier) => {
+      return (start < tier.end && end > tier.start)
+    })
+
+    if (hasOverlap) {
+      setError('Esta faixa se sobrepõe a uma faixa existente. Por favor, ajuste os valores.')
+      return
+    }
+
+    // Adicionar nova faixa
+    const newTiers = [...radiusTiers, { start, end, fee, time }]
+    // Ordenar por km inicial
+    newTiers.sort((a, b) => a.start - b.start)
+    setRadiusTiers(newTiers)
+    setNewRadiusTier({ start: '', end: '', fee: '', time: '60' })
+    setError('')
   }
 
   const handleSaveNeighborhoodMode = async () => {
@@ -381,7 +428,7 @@ export default function DeliverySetupStep({ onComplete }: DeliverySetupStepProps
         </div>
 
         <div>
-          <Label className="mb-3 block">Faixas de Raio</Label>
+          <Label className="mb-3 block">Faixas de Raio ({radiusTiers.length})</Label>
           <div className="space-y-2">
             {radiusTiers.map((tier, index) => (
               <div key={index} className="grid grid-cols-4 gap-2 items-center p-3 bg-gray-50 rounded-md">
@@ -402,6 +449,67 @@ export default function DeliverySetupStep({ onComplete }: DeliverySetupStepProps
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Formulário Nova Faixa de Raio */}
+        <div className="space-y-4 border rounded-md p-4">
+          <Label>Adicionar Nova Faixa de KM</Label>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="KM inicial"
+                value={newRadiusTier.start}
+                onChange={(e) =>
+                  setNewRadiusTier({ ...newRadiusTier, start: e.target.value })
+                }
+              />
+              <p className="text-xs text-gray-500 mt-1">Ex: 0, 5, 12</p>
+            </div>
+            <div>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="KM final"
+                value={newRadiusTier.end}
+                onChange={(e) =>
+                  setNewRadiusTier({ ...newRadiusTier, end: e.target.value })
+                }
+              />
+              <p className="text-xs text-gray-500 mt-1">Ex: 5, 12, 20</p>
+            </div>
+            <div>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Taxa (R$)"
+                value={newRadiusTier.fee}
+                onChange={(e) =>
+                  setNewRadiusTier({ ...newRadiusTier, fee: e.target.value })
+                }
+              />
+              <p className="text-xs text-gray-500 mt-1">Ex: 10.00</p>
+            </div>
+            <div>
+              <Input
+                type="number"
+                min="0"
+                placeholder="Tempo (min)"
+                value={newRadiusTier.time}
+                onChange={(e) =>
+                  setNewRadiusTier({ ...newRadiusTier, time: e.target.value })
+                }
+              />
+              <p className="text-xs text-gray-500 mt-1">Ex: 45</p>
+            </div>
+          </div>
+          <Button onClick={handleAddRadiusTier} variant="outline" className="w-full">
+            + Adicionar Faixa
+          </Button>
         </div>
 
         {error && (

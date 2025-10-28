@@ -374,7 +374,7 @@ Gostaria de:
                 }
 
         # Strategy 2: Fallback to Google Maps if neighborhood not found in text
-        geocode_result = await self._geocode_address(address)
+        geocode_result = await self._geocode_address(address, tenant_id, db)
 
         if geocode_result:
             neighborhood = geocode_result.get("neighborhood", "").lower()
@@ -414,7 +414,7 @@ Gostaria de:
         """Validate by radius/distance (Google Maps)"""
 
         # Geocode address
-        geocode_result = await self._geocode_address(address)
+        geocode_result = await self._geocode_address(address, tenant_id, db)
 
         if not geocode_result:
             return {
@@ -488,11 +488,65 @@ Gostaria de:
             "reason": "Endereço não está em nossa área de entrega"
         }
 
-    async def _geocode_address(self, address: str) -> Optional[Dict[str, Any]]:
-        """Geocode address using Google Maps API"""
+    async def _geocode_address(self, address: str, tenant_id: UUID, db: Session) -> Optional[Dict[str, Any]]:
+        """
+        Geocode address using Google Maps API
+
+        IMPORTANTE: Filtra por cidade/estado do tenant para evitar resultados globais errados
+        (ex: "Granada, Espanha" ao invés de "Granada, Uberlândia")
+        """
 
         try:
-            geocode_result = self.gmaps.geocode(address, language="pt-BR")
+            # Buscar cidade/estado do tenant
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            tenant_city = None
+            tenant_state = None
+
+            if tenant and tenant.address:
+                tenant_city = tenant.address.get('city')
+                tenant_state = tenant.address.get('state')
+
+            # Montar componentes de restrição geográfica
+            components = {}
+            if tenant_city:
+                components['locality'] = tenant_city
+            if tenant_state:
+                components['administrative_area'] = tenant_state
+            components['country'] = 'BR'  # Sempre Brasil
+
+            logger.info(f"🌎 Geocoding com filtros: cidade={tenant_city}, estado={tenant_state}, país=BR")
+
+            # Tentar com filtros geográficos primeiro
+            geocode_result = self.gmaps.geocode(
+                address,
+                language="pt-BR",
+                components=components
+            )
+
+            # Se não encontrou com filtros, tentar sem filtros como fallback
+            if not geocode_result:
+                logger.warning(f"⚠️ Nenhum resultado com filtros. Tentando sem filtros...")
+                geocode_result = self.gmaps.geocode(address, language="pt-BR")
+
+                # Validar se resultado está na cidade/estado correto
+                if geocode_result and tenant_city:
+                    result_city = None
+                    result_state = None
+
+                    for component in geocode_result[0]["address_components"]:
+                        types = component["types"]
+                        if "locality" in types or "administrative_area_level_2" in types:
+                            result_city = component["long_name"]
+                        elif "administrative_area_level_1" in types:
+                            result_state = component["short_name"]
+
+                    # Verificar se cidade/estado batem
+                    if result_city and result_city.lower() != tenant_city.lower():
+                        logger.warning(
+                            f"⚠️ Endereço encontrado em {result_city}, {result_state}. "
+                            f"Esperado: {tenant_city}, {tenant_state}"
+                        )
+                        return None  # Rejeitar resultado de cidade errada
 
             if not geocode_result:
                 return None
