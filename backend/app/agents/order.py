@@ -729,3 +729,242 @@ Seja claro e objetivo."""
         logger.info(f"Order created: {order_obj.id} - Total: R$ {order['total']:.2f}")
 
         return order_obj
+
+    # ================================================================
+    # NOVOS MÉTODOS COM IA REAL (não IF/ELSE)
+    # ================================================================
+
+    def _build_system_prompt_ai(self, context: AgentContext, db) -> str:
+        """
+        System prompt para OrderAgent decidir ações com IA
+
+        NOVO: Usa LLM para gerenciar carrinho (não listas de palavras)
+        """
+        from app.database.models import Product, Tenant
+
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+            products = db.query(Product).filter(
+                Product.tenant_id == context.tenant_id,
+                Product.is_available == True
+            ).all()
+
+            # Formatar produtos
+            products_text = ""
+            for i, p in enumerate(products, 1):
+                products_text += f"{i}. {p.name} - R$ {p.price:.2f}\n"
+
+            # Carrinho atual
+            current_order = context.session_data.get("current_order", {})
+            items = current_order.get("items", [])
+
+            cart_text = ""
+            if items:
+                for item in items:
+                    cart_text += f"- {item['quantity']}x {item['product_name']} (R$ {item['subtotal']:.2f})\n"
+                cart_text += f"Total: R$ {current_order.get('total', 0):.2f}"
+            else:
+                cart_text = "Carrinho vazio"
+
+            # Última pergunta do bot
+            last_bot_question = ""
+            for msg in reversed(context.message_history):
+                if msg.get("role") == "assistant":
+                    last_bot_question = msg.get("content", "")
+                    break
+
+        except Exception as e:
+            logger.error(f"Error building system prompt: {e}")
+            products_text = "(erro ao carregar produtos)"
+            cart_text = "Carrinho vazio"
+            last_bot_question = ""
+
+        # Contexto
+        ctx = self._format_full_context(context)
+
+        return f"""Você gerencia o CARRINHO DE COMPRAS de pedidos de gás via WhatsApp.
+
+{ctx}
+
+PRODUTOS DISPONÍVEIS:
+{products_text}
+
+CARRINHO ATUAL:
+{cart_text}
+
+ÚLTIMA PERGUNTA QUE VOCÊ FEZ:
+"{last_bot_question}"
+
+RESPONSABILIDADES:
+1. Adicionar produtos ao carrinho
+2. Remover produtos do carrinho
+3. Mostrar resumo do pedido
+4. Detectar quando cliente quer finalizar
+
+REGRAS DE INTERPRETAÇÃO:
+1. Se você perguntou "Deseja adicionar mais?" e cliente diz não/finalizar/pronto/só isso:
+   → NÃO adicione produto
+   → Ação = "finalizar"
+
+2. Se cliente menciona produto (por nome ou número da lista):
+   → Adicione ao carrinho
+
+3. Se cliente diz sim/ok/pode SEM você ter perguntado nada:
+   → Peça esclarecimento
+
+4. Entenda variações naturais:
+   - "quero um P13" = adicionar Botijão P13
+   - "pode seguir" após você perguntar = confirmação
+   - "só isso" / "mais nada" = finalizar
+   - "1" = produto número 1 da lista
+   - "dois p13" = 2x Botijão P13
+
+RESPONDA **APENAS** EM JSON:
+{{
+    "acao": "adicionar" | "remover" | "mostrar_resumo" | "finalizar" | "esclarecer",
+    "produto_nome": "nome do produto ou null",
+    "quantidade": número ou null,
+    "mensagem_cliente": "texto amigável da resposta",
+    "proximo_passo": "pedir_endereco" | "continuar_comprando" | "esclarecer"
+}}
+
+IMPORTANTE: Seja natural e amigável na mensagem_cliente."""
+
+    async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
+        """
+        Executa decisão do LLM para gerenciar carrinho
+
+        NOVO: Implementação com IA (não IF/ELSE)
+        """
+        from app.database.models import Product
+
+        try:
+            acao = decision.get("acao")
+            mensagem = decision.get("mensagem_cliente", "")
+            proximo_passo = decision.get("proximo_passo")
+
+            logger.info(f"🛒 OrderAgent ação: {acao} | Próximo: {proximo_passo}")
+
+            current_order = context.session_data.get("current_order", {
+                "items": [],
+                "subtotal": 0.0,
+                "delivery_fee": 0.0,
+                "total": 0.0
+            })
+
+            # ADICIONAR produto
+            if acao == "adicionar":
+                produto_nome = decision.get("produto_nome")
+                quantidade = decision.get("quantidade", 1)
+
+                # Buscar produto
+                product = db.query(Product).filter(
+                    Product.tenant_id == context.tenant_id,
+                    Product.name.ilike(f"%{produto_nome}%"),
+                    Product.is_available == True
+                ).first()
+
+                if not product:
+                    return AgentResponse(
+                        text=f"Desculpe, não encontrei '{produto_nome}' em nosso catálogo.",
+                        intent="product_not_found",
+                        should_end=False
+                    )
+
+                # Adicionar ao carrinho
+                item = {
+                    "product_id": str(product.id),
+                    "product_name": product.name,
+                    "quantity": quantidade,
+                    "unit_price": float(product.price),
+                    "subtotal": float(product.price) * quantidade
+                }
+                current_order["items"].append(item)
+
+                # Recalcular totais
+                current_order["subtotal"] = sum(i["subtotal"] for i in current_order["items"])
+                current_order["total"] = current_order["subtotal"] + current_order.get("delivery_fee", 0)
+
+                return AgentResponse(
+                    text=mensagem,
+                    intent="item_added",
+                    context_updates={"current_order": current_order},
+                    should_end=False
+                )
+
+            # FINALIZAR
+            elif acao == "finalizar":
+                if not current_order.get("items"):
+                    return AgentResponse(
+                        text="Seu carrinho está vazio. O que você gostaria de pedir?",
+                        intent="empty_cart",
+                        should_end=False
+                    )
+
+                return AgentResponse(
+                    text=mensagem,
+                    intent="ready_for_address",
+                    next_agent="validation",
+                    context_updates={
+                        "current_order": current_order,
+                        "stage": "awaiting_address"
+                    },
+                    should_end=False
+                )
+
+            # MOSTRAR RESUMO
+            elif acao == "mostrar_resumo":
+                summary = await self._build_order_summary(current_order)
+                return AgentResponse(
+                    text=f"{mensagem}\n\n{summary}",
+                    intent="show_summary",
+                    should_end=False
+                )
+
+            # ESCLARECER
+            else:
+                return AgentResponse(
+                    text=mensagem,
+                    intent="clarification_needed",
+                    should_end=False
+                )
+
+        except Exception as e:
+            logger.error(f"Error in _execute_decision_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema. Pode repetir?",
+                intent="error",
+                should_end=False
+            )
+
+    async def process_with_ai(self, message: str, context: AgentContext, db) -> AgentResponse:
+        """
+        NOVO: Process with AI-powered decisions (não IF/ELSE)
+
+        Fluxo:
+        1. Build system prompt com produtos + carrinho + contexto
+        2. LLM decide ação
+        3. Execute decisão
+        """
+        from langchain.schema import SystemMessage, HumanMessage
+
+        try:
+            system_prompt = self._build_system_prompt_ai(context, db)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Cliente: {message}")
+            ]
+
+            logger.info("🔄 OrderAgent calling LLM...")
+            response = await self._call_llm(messages)
+            decision = self._parse_llm_response(response)
+
+            return await self._execute_decision_ai(decision, context, db)
+
+        except Exception as e:
+            logger.error(f"Error in process_with_ai: {e}")
+            return AgentResponse(
+                text="Desculpe, tive um problema ao processar seu pedido.",
+                intent="error",
+                should_end=False
+            )
