@@ -812,23 +812,51 @@ REGRAS DE INTERPRETAÇÃO:
 3. Se cliente diz sim/ok/pode SEM você ter perguntado nada:
    → Peça esclarecimento
 
-4. Entenda variações naturais:
+4. Se cliente menciona MÚLTIPLOS produtos (ex: "um gás e uma água"):
+   → Use ação "adicionar_multiplos"
+   → Liste TODOS os produtos em "produtos" array
+
+5. Entenda variações naturais:
    - "quero um P13" = adicionar Botijão P13
    - "pode seguir" após você perguntar = confirmação
    - "só isso" / "mais nada" = finalizar
    - "1" = produto número 1 da lista
    - "dois p13" = 2x Botijão P13
+   - "um gás e uma água" = 1x gás + 1x água (múltiplos)
 
 RESPONDA **APENAS** EM JSON:
+
+**Para UM produto**:
 {{
-    "acao": "adicionar" | "remover" | "mostrar_resumo" | "finalizar" | "esclarecer",
-    "produto_nome": "nome do produto ou null",
-    "quantidade": número ou null,
+    "acao": "adicionar",
+    "produto_nome": "nome do produto",
+    "quantidade": número,
     "mensagem_cliente": "texto amigável da resposta",
     "proximo_passo": "pedir_endereco" | "continuar_comprando" | "esclarecer"
 }}
 
-IMPORTANTE: Seja natural e amigável na mensagem_cliente."""
+**Para MÚLTIPLOS produtos**:
+{{
+    "acao": "adicionar_multiplos",
+    "produtos": [
+        {{"produto_nome": "nome produto 1", "quantidade": número}},
+        {{"produto_nome": "nome produto 2", "quantidade": número}}
+    ],
+    "mensagem_cliente": "texto amigável confirmando TODOS os produtos",
+    "proximo_passo": "continuar_comprando"
+}}
+
+**Para outras ações**:
+{{
+    "acao": "remover" | "mostrar_resumo" | "finalizar" | "esclarecer",
+    "mensagem_cliente": "texto amigável da resposta",
+    "proximo_passo": "..."
+}}
+
+IMPORTANTE:
+- Identifique TODOS os produtos mencionados pelo cliente
+- Seja natural e amigável na mensagem_cliente
+- Confirme todos os produtos que foram adicionados"""
 
     async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
         """
@@ -852,8 +880,81 @@ IMPORTANTE: Seja natural e amigável na mensagem_cliente."""
                 "total": 0.0
             })
 
-            # ADICIONAR produto
-            if acao == "adicionar":
+            # ADICIONAR MÚLTIPLOS produtos (NOVO)
+            if acao == "adicionar_multiplos":
+                produtos_lista = decision.get("produtos", [])
+
+                if not produtos_lista:
+                    return AgentResponse(
+                        text="Não consegui identificar os produtos. Pode repetir?",
+                        intent="clarification_needed",
+                        should_end=False
+                    )
+
+                items_added = []
+                items_not_found = []
+
+                for produto_info in produtos_lista:
+                    produto_nome = produto_info.get("produto_nome")
+                    quantidade = produto_info.get("quantidade", 1)
+
+                    if not produto_nome:
+                        continue
+
+                    # Buscar produto no banco
+                    product = db.query(Product).filter(
+                        Product.tenant_id == context.tenant_id,
+                        Product.name.ilike(f"%{produto_nome}%"),
+                        Product.is_available == True
+                    ).first()
+
+                    if not product:
+                        logger.warning(f"Produto '{produto_nome}' não encontrado")
+                        items_not_found.append(produto_nome)
+                        continue
+
+                    # Adicionar ao carrinho
+                    item = {
+                        "product_id": str(product.id),
+                        "product_name": product.name,
+                        "quantity": quantidade,
+                        "unit_price": float(product.price),
+                        "subtotal": float(product.price) * quantidade
+                    }
+                    current_order["items"].append(item)
+                    items_added.append(f"{quantidade}x {product.name}")
+
+                # Recalcular totais
+                current_order["subtotal"] = sum(i["subtotal"] for i in current_order["items"])
+                current_order["total"] = current_order["subtotal"] + current_order.get("delivery_fee", 0)
+
+                # Construir mensagem de resposta
+                if not items_added:
+                    return AgentResponse(
+                        text="Não consegui adicionar os produtos ao carrinho. Pode repetir quais produtos você quer?",
+                        intent="product_not_found",
+                        should_end=False
+                    )
+
+                items_text = ", ".join(items_added)
+                summary = await self._build_order_summary(current_order)
+
+                response_text = f"✅ Adicionado: {items_text}!\n\n{summary}\n\nDeseja adicionar mais alguma coisa?"
+
+                # Se algum produto não foi encontrado, avisar
+                if items_not_found:
+                    not_found_text = ", ".join(items_not_found)
+                    response_text = f"✅ Adicionado: {items_text}!\n\n⚠️ Não encontrei: {not_found_text}\n\n{summary}\n\nDeseja adicionar mais alguma coisa?"
+
+                return AgentResponse(
+                    text=response_text,
+                    intent="items_added",
+                    context_updates={"current_order": current_order},
+                    should_end=False
+                )
+
+            # ADICIONAR UM produto
+            elif acao == "adicionar":
                 produto_nome = decision.get("produto_nome")
                 quantidade = decision.get("quantidade", 1)
 
