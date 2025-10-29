@@ -723,9 +723,18 @@ Gostaria de:
 
         ctx = self._format_full_context(context)
 
+        # Endereço parcial já informado (se houver)
+        partial_address = context.session_data.get("partial_address", {})
+        partial_text = ""
+        if partial_address:
+            partial_text = "\n\n📍 ENDEREÇO PARCIAL JÁ INFORMADO PELO CLIENTE:\n"
+            partial_text += f"- Rua: {partial_address.get('rua', '❌ não informada')}\n"
+            partial_text += f"- Número: {partial_address.get('numero', '❌ não informado')}\n"
+            partial_text += f"- Bairro: {partial_address.get('bairro', '❌ não informado')}\n"
+
         return f"""Você é responsável por EXTRAIR e VALIDAR endereços de entrega via WhatsApp.
 
-{ctx}
+{ctx}{partial_text}
 
 MODO DE ENTREGA: {mode}
 
@@ -736,15 +745,39 @@ RESPONSABILIDADES:
 4. Validar formato e clareza do endereço
 
 REGRAS DE EXTRAÇÃO:
-1. Endereço completo deve ter: rua/avenida + número + bairro
-2. Complemento (apto, bloco) e referência são opcionais
-3. Variações comuns:
+1. **PRIORIDADE**: Se há "ENDEREÇO PARCIAL JÁ INFORMADO" acima:
+   → COMBINE as informações parciais com a nova mensagem do cliente
+   → NÃO peça informações que já foram fornecidas (marcadas com ✅)
+   → APENAS peça o que ainda falta (marcado com ❌)
+
+2. Endereço completo deve ter: rua/avenida + número + bairro (TODOS preenchidos)
+
+3. Complemento (apto, bloco) e referência são opcionais
+
+4. Variações comuns:
    - "morada 15" = endereço número 15
    - "Rua ABC 123" = Rua ABC, número 123
    - "av paulista 1000 bela vista" = Av Paulista 1000, Bela Vista
    - "rua flores centro" (SEM número) = incompleto
+   - "granada" (quando já tem rua/número) = bairro
 
-4. Se falta informação, identifique O QUE falta
+5. Se falta informação, identifique O QUE falta (sem repetir o que já foi informado)
+
+EXEMPLOS DE FLUXO INCREMENTAL:
+
+**Exemplo 1**:
+- Cliente: "av angelino favato 155"
+- Não há parcial
+- Extrair: rua="av angelino favato", numero="155", bairro=null
+- completo=false, faltando=["bairro"]
+- Mensagem: "Qual o bairro?"
+
+**Exemplo 2 (CONTINUAÇÃO)**:
+- PARCIAL: rua="av angelino favato", numero="155", bairro=null
+- Cliente: "granada"
+- Combinar: rua="av angelino favato", numero="155", bairro="granada"
+- completo=TRUE ✅
+- Mensagem: "Perfeito! Vou validar seu endereço..."
 
 RESPONDA **APENAS** EM JSON:
 {{
@@ -758,7 +791,10 @@ RESPONDA **APENAS** EM JSON:
     "mensagem_cliente": "texto amigável da resposta"
 }}
 
-IMPORTANTE: Se completo=false, pergunte educadamente O QUE falta."""
+IMPORTANTE:
+- Se completo=false, pergunte educadamente APENAS o que falta
+- NÃO repita perguntas sobre informações já fornecidas
+- Combine informações parciais com novas informações do cliente"""
 
     async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
         """
@@ -770,24 +806,46 @@ IMPORTANTE: Se completo=false, pergunte educadamente O QUE falta."""
             completo = decision.get("completo", False)
             mensagem = decision.get("mensagem_cliente", "")
 
+            # Pegar parcial existente (se houver)
+            partial_address = context.session_data.get("partial_address", {})
+
+            # Combinar parcial com nova extração do LLM
+            rua = decision.get("rua") or partial_address.get("rua")
+            numero = decision.get("numero") or partial_address.get("numero")
+            bairro = decision.get("bairro") or partial_address.get("bairro")
+            complemento = decision.get("complemento") or partial_address.get("complemento")
+            referencia = decision.get("referencia") or partial_address.get("referencia")
+
             if not completo:
-                # Endereço incompleto
+                # Endereço incompleto - salvar informações parciais
                 faltando = decision.get("faltando", [])
                 logger.info(f"📍 ValidationAgent: Endereço incompleto. Faltando: {faltando}")
+
+                # Salvar informações parciais (apenas valores não-null)
+                new_partial = {
+                    "rua": rua,
+                    "numero": numero,
+                    "bairro": bairro,
+                    "complemento": complemento,
+                    "referencia": referencia
+                }
+                # Remover valores None
+                new_partial = {k: v for k, v in new_partial.items() if v}
+
+                logger.info(f"📍 Salvando parcial: {new_partial}")
 
                 return AgentResponse(
                     text=mensagem,
                     intent="address_incomplete",
-                    context_updates={"stage": "awaiting_address"},
+                    context_updates={
+                        "stage": "awaiting_address",
+                        "partial_address": new_partial
+                    },
                     should_end=False
                 )
 
             # Endereço completo - montar string
-            rua = decision.get("rua", "")
-            numero = decision.get("numero", "")
-            bairro = decision.get("bairro", "")
-            complemento = decision.get("complemento")
-            referencia = decision.get("referencia")
+            # (rua, numero, bairro já foram combinados acima)
 
             address_parts = []
             if rua:
@@ -833,12 +891,13 @@ Está correto? Podemos continuar com o pedido?"""
                     context_updates={
                         "stage": "confirming_order",
                         "delivery_address": validation_result,
-                        "delivery_fee": fee
+                        "delivery_fee": fee,
+                        "partial_address": None  # Limpar parcial após validação bem-sucedida
                     },
                     should_end=False
                 )
             else:
-                # Não entrega
+                # Não entrega - manter parcial para tentar outro endereço
                 reason = validation_result.get("reason", "endereço fora da área")
 
                 return AgentResponse(
@@ -849,6 +908,9 @@ Motivo: {reason}
 Gostaria de tentar outro endereço?""",
                     intent="address_rejected",
                     requires_human=True,
+                    context_updates={
+                        "partial_address": None  # Limpar parcial para recomeçar
+                    },
                     should_end=False
                 )
 
