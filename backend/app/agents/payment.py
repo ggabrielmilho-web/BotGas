@@ -330,10 +330,34 @@ Seu pedido já foi registrado e será preparado!"""
 Você vai pagar em dinheiro na entrega."""
 
         if change_for:
-            change_str = f"R$ {change_for:.2f}".replace(".", ",")
-            change_amount = change_for - order['total']
-            change_amount_str = f"R$ {change_amount:.2f}".replace(".", ",")
-            message += f"""
+            # Validação: valor informado deve ser >= total do pedido
+            if change_for < order['total']:
+                # Valor insuficiente - retornar mensagem de erro
+                change_str = f"R$ {change_for:.2f}".replace(".", ",")
+                return f"""❌ O valor informado ({change_str}) é menor que o total do pedido ({total_str}).
+
+Para pagar em dinheiro, você precisa ter no mínimo o valor do pedido.
+
+💡 Você pode:
+• Informar um valor maior (ex: R$ 150,00)
+• Pagar com o valor exato ({total_str})
+• Escolher outra forma de pagamento (PIX ou Cartão)
+
+Qual valor você vai usar?"""
+
+            elif change_for == order['total']:
+                # Valor exato (sem troco)
+                message += f"""
+
+💵 *Valor exato:* {total_str}
+✅ Sem necessidade de troco"""
+
+            else:
+                # Valor maior (com troco válido)
+                change_str = f"R$ {change_for:.2f}".replace(".", ",")
+                change_amount = change_for - order['total']
+                change_amount_str = f"R$ {change_amount:.2f}".replace(".", ",")
+                message += f"""
 
 💵 *Troco para:* {change_str}
 💰 *Troco:* {change_amount_str}"""
@@ -414,32 +438,48 @@ FORMAS DE PAGAMENTO ACEITAS:
 RESPONSABILIDADES:
 1. Detectar qual forma de pagamento o cliente escolheu
 2. Se for DINHEIRO, perguntar se precisa de troco
-3. Confirmar forma de pagamento
+3. VALIDAR: Se cliente informou troco, verificar se valor >= total do pedido
+4. Confirmar forma de pagamento
 
 REGRAS DE DETECÇÃO:
 1. Variações comuns:
    - "pix" / "no pix" / "vou pagar no pix" = PIX
    - "dinheiro" / "espécie" / "na entrega" / "cash" = Dinheiro
    - "cartão" / "cartao" / "débito" / "credito" / "na maquininha" = Cartão
-   - "100 reais" (se total < 100) = Dinheiro com troco para R$ 100
+   - "100 reais" = valor informado pelo cliente
 
-2. Se cliente menciona valor maior que o total:
-   - Assumir dinheiro com troco
-   - Exemplo: total R$ 65, cliente diz "100" = troco para R$ 100
+2. VALIDAÇÃO DE TROCO (CRÍTICO):
+   - Se cliente mencionar valor para troco
+   - Verificar: valor_informado >= {total:.2f} (total do pedido)
+   - Se valor < total: REJEITAR e pedir valor válido
+   - Se valor == total: aceitar como "valor exato, sem troco"
+   - Se valor > total: calcular troco normalmente
 
-3. Se não conseguir detectar:
+3. Exemplos de validação:
+   - Total: R$ {total:.2f}, Cliente: "100" → Se 100 < {total:.2f} = INVÁLIDO
+   - Total: R$ {total:.2f}, Cliente: "{total:.0f}" → VÁLIDO (valor exato)
+   - Total: R$ {total:.2f}, Cliente: "150" → Se 150 > {total:.2f} = VÁLIDO (com troco)
+
+4. Se não conseguir detectar:
    - Pedir esclarecimento educadamente
 
 RESPONDA **APENAS** EM JSON:
 {{
     "metodo": "pix" | "dinheiro" | "cartao" | "desconhecido",
     "troco_para": valor numérico ou null,
+    "validacao_troco": {{
+        "valido": true/false,
+        "motivo": "se inválido, explicar: 'Valor R$ X é menor que total R$ Y'"
+    }},
     "confirmado": true/false,
     "mensagem_cliente": "texto amigável da resposta",
-    "proximo_passo": "confirmar_pedido" | "pedir_troco" | "esclarecer"
+    "proximo_passo": "confirmar_pedido" | "pedir_troco" | "corrigir_valor" | "esclarecer"
 }}
 
-IMPORTANTE: Seja amigável e confirme antes de finalizar."""
+IMPORTANTE:
+- Seja amigável mesmo ao rejeitar valores inválidos
+- Sempre valide troco_para contra o total do pedido (R$ {total:.2f})
+- Se valor insuficiente, set validacao_troco.valido=false e explique o problema"""
 
     async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
         """
@@ -454,6 +494,48 @@ IMPORTANTE: Seja amigável e confirme antes de finalizar."""
             confirmado = decision.get("confirmado", False)
 
             logger.info(f"💳 PaymentAgent: Método={metodo}, Troco={troco_para}, Confirmado={confirmado}")
+
+            # VALIDAÇÃO: Verificar se troco é válido (se LLM detectou problema)
+            validacao_troco = decision.get("validacao_troco", {})
+            if troco_para and not validacao_troco.get("valido", True):
+                # Troco inválido detectado pelo LLM
+                motivo = validacao_troco.get("motivo", "Valor insuficiente")
+                logger.warning(f"💳 PaymentAgent: Troco inválido - {motivo}")
+
+                return AgentResponse(
+                    text=mensagem,  # Mensagem já vem do LLM explicando o problema
+                    intent="payment_correction_needed",
+                    context_updates={"stage": "payment"},
+                    should_end=False
+                )
+
+            # FAILSAFE: Double-check no código caso LLM não detecte
+            if metodo == "dinheiro" and troco_para:
+                current_order = context.session_data.get("current_order", {})
+                total_pedido = current_order.get("total", 0)
+
+                if troco_para < total_pedido:
+                    # LLM falhou em detectar - aplicar correção via código
+                    logger.error(f"💳 FAILSAFE: Troco inválido não detectado pelo LLM! Valor: {troco_para}, Total: {total_pedido}")
+
+                    total_str = f"R$ {total_pedido:.2f}".replace(".", ",")
+                    troco_str = f"R$ {troco_para:.2f}".replace(".", ",")
+
+                    return AgentResponse(
+                        text=f"""❌ O valor informado ({troco_str}) é menor que o total do pedido ({total_str}).
+
+Para pagar em dinheiro, você precisa ter no mínimo o valor do pedido.
+
+💡 Você pode:
+• Informar um valor maior (ex: R$ 150,00)
+• Pagar com o valor exato ({total_str})
+• Escolher outra forma de pagamento (PIX ou Cartão)
+
+Qual valor você vai usar?""",
+                        intent="payment_correction_needed",
+                        context_updates={"stage": "payment"},
+                        should_end=False
+                    )
 
             # Se não detectou ou não confirmou
             if metodo == "desconhecido" or not confirmado:
