@@ -437,31 +437,46 @@ FORMAS DE PAGAMENTO ACEITAS:
 
 RESPONSABILIDADES:
 1. Detectar qual forma de pagamento o cliente escolheu
-2. Se for DINHEIRO, perguntar se precisa de troco
-3. VALIDAR: Se cliente informou troco, verificar se valor >= total do pedido
-4. Confirmar forma de pagamento
+2. Se for PIX ou CARTÃO: set confirmado=true, proximo_passo="confirmar_pedido"
+3. Se for DINHEIRO e cliente NÃO mencionou troco/valor: set confirmado=false, proximo_passo="pedir_troco"
+4. Se for DINHEIRO e cliente mencionou valor/troco: VALIDAR valor >= total, set confirmado=true
+5. Se for DINHEIRO e cliente disse "não preciso de troco" ou "valor exato": set confirmado=true, troco_para=null
 
 REGRAS DE DETECÇÃO:
 1. Variações comuns:
-   - "pix" / "no pix" / "vou pagar no pix" = PIX
-   - "dinheiro" / "espécie" / "na entrega" / "cash" = Dinheiro
-   - "cartão" / "cartao" / "débito" / "credito" / "na maquininha" = Cartão
-   - "100 reais" = valor informado pelo cliente
+   - "pix" / "no pix" / "vou pagar no pix" → PIX
+   - "dinheiro" / "espécie" / "na entrega" / "cash" → Dinheiro
+   - "cartão" / "cartao" / "débito" / "credito" / "na maquininha" → Cartão
+   - "100 reais" / "troco para 100" → valor informado pelo cliente
 
 2. VALIDAÇÃO DE TROCO (CRÍTICO):
    - Se cliente mencionar valor para troco
    - Verificar: valor_informado >= {total:.2f} (total do pedido)
-   - Se valor < total: REJEITAR e pedir valor válido
+   - Se valor < total: REJEITAR (validacao_troco.valido=false)
    - Se valor == total: aceitar como "valor exato, sem troco"
    - Se valor > total: calcular troco normalmente
 
-3. Exemplos de validação:
-   - Total: R$ {total:.2f}, Cliente: "100" → Se 100 < {total:.2f} = INVÁLIDO
-   - Total: R$ {total:.2f}, Cliente: "{total:.0f}" → VÁLIDO (valor exato)
-   - Total: R$ {total:.2f}, Cliente: "150" → Se 150 > {total:.2f} = VÁLIDO (com troco)
+3. EXEMPLOS DE RESPOSTAS:
 
-4. Se não conseguir detectar:
-   - Pedir esclarecimento educadamente
+   Exemplo 1 - Só método:
+   Cliente: "dinheiro"
+   → {{"metodo": "dinheiro", "troco_para": null, "confirmado": false, "proximo_passo": "pedir_troco"}}
+
+   Exemplo 2 - Método + troco válido:
+   Cliente: "dinheiro, troco para 200"
+   → {{"metodo": "dinheiro", "troco_para": 200, "confirmado": true, "proximo_passo": "confirmar_pedido", "validacao_troco": {{"valido": true}}}}
+
+   Exemplo 3 - Método + não precisa troco:
+   Cliente: "dinheiro, valor exato" OU "não preciso de troco"
+   → {{"metodo": "dinheiro", "troco_para": null, "confirmado": true, "proximo_passo": "confirmar_pedido"}}
+
+   Exemplo 4 - PIX/Cartão:
+   Cliente: "pix"
+   → {{"metodo": "pix", "troco_para": null, "confirmado": true, "proximo_passo": "confirmar_pedido"}}
+
+   Exemplo 5 - Troco inválido:
+   Cliente: "dinheiro, troco para 50" (se total = R$ 110)
+   → {{"metodo": "dinheiro", "troco_para": 50, "confirmado": false, "proximo_passo": "corrigir_valor", "validacao_troco": {{"valido": false, "motivo": "Valor R$ 50,00 é menor que total R$ 110,00"}}}}
 
 RESPONDA **APENAS** EM JSON:
 {{
@@ -469,17 +484,18 @@ RESPONDA **APENAS** EM JSON:
     "troco_para": valor numérico ou null,
     "validacao_troco": {{
         "valido": true/false,
-        "motivo": "se inválido, explicar: 'Valor R$ X é menor que total R$ Y'"
+        "motivo": "se inválido, explicar"
     }},
     "confirmado": true/false,
-    "mensagem_cliente": "texto amigável da resposta",
+    "mensagem_cliente": "texto amigável (usado apenas se proximo_passo = esclarecer ou corrigir_valor)",
     "proximo_passo": "confirmar_pedido" | "pedir_troco" | "corrigir_valor" | "esclarecer"
 }}
 
 IMPORTANTE:
-- Seja amigável mesmo ao rejeitar valores inválidos
-- Sempre valide troco_para contra o total do pedido (R$ {total:.2f})
-- Se valor insuficiente, set validacao_troco.valido=false e explique o problema"""
+- Se cliente disse só "dinheiro" → confirmado=false, proximo_passo="pedir_troco"
+- Se cliente disse "pix" ou "cartão" → confirmado=true, proximo_passo="confirmar_pedido"
+- Se cliente informou troco válido → confirmado=true, proximo_passo="confirmar_pedido"
+- Sempre valide troco_para contra o total do pedido (R$ {total:.2f})"""
 
     async def _execute_decision_ai(self, decision: dict, context: AgentContext, db) -> AgentResponse:
         """
@@ -537,8 +553,53 @@ Qual valor você vai usar?""",
                         should_end=False
                     )
 
-            # Se não detectou ou não confirmou
-            if metodo == "desconhecido" or not confirmado:
+            # Pegar próximo passo da decisão da IA
+            proximo_passo = decision.get("proximo_passo", "")
+
+            # Se método não detectado
+            if metodo == "desconhecido":
+                tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
+                current_order = context.session_data.get("current_order", {})
+
+                return AgentResponse(
+                    text=await self._build_payment_options(tenant, current_order),
+                    intent="payment_method_needed",
+                    context_updates={"stage": "payment"},
+                    should_end=False
+                )
+
+            # Se precisa pedir troco (dinheiro sem valor informado)
+            if metodo == "dinheiro" and proximo_passo == "pedir_troco" and not troco_para:
+                current_order = context.session_data.get("current_order", {})
+                total_str = f"R$ {current_order.get('total', 0):.2f}".replace(".", ",")
+
+                logger.info(f"💳 PaymentAgent: Pedindo informação de troco")
+
+                return AgentResponse(
+                    text=f"""✅ Pagamento em Dinheiro
+
+💵 *Valor do pedido:* {total_str}
+
+Você vai precisar de troco? Se sim, para quanto?
+
+Ou se tiver o valor exato, só confirmar que está ok!""",
+                    intent="awaiting_change_info",
+                    context_updates={"stage": "payment", "payment_method": "dinheiro"},
+                    should_end=False
+                )
+
+            # Se não confirmado e tem mensagem personalizada do LLM
+            if not confirmado and mensagem:
+                logger.info(f"💳 PaymentAgent: LLM pediu esclarecimento/correção")
+                return AgentResponse(
+                    text=mensagem,
+                    intent="payment_clarification",
+                    context_updates={"stage": "payment"},
+                    should_end=False
+                )
+
+            # Se não confirmado sem mensagem, pedir esclarecimento
+            if not confirmado:
                 tenant = db.query(Tenant).filter(Tenant.id == context.tenant_id).first()
                 current_order = context.session_data.get("current_order", {})
 
@@ -635,6 +696,8 @@ Obrigado pela preferência! 😊"""
         from langchain.schema import SystemMessage, HumanMessage
 
         try:
+            logger.info(f"💳 PaymentAgent.process_with_ai() CHAMADO! Mensagem: '{message}'")
+
             system_prompt = self._build_system_prompt_ai(context, db)
             messages = [
                 SystemMessage(content=system_prompt),
@@ -644,6 +707,8 @@ Obrigado pela preferência! 😊"""
             logger.info("🔄 PaymentAgent calling LLM...")
             response = await self._call_llm(messages)
             decision = self._parse_llm_response(response)
+
+            logger.info(f"💳 PaymentAgent LLM decision: {decision}")
 
             return await self._execute_decision_ai(decision, context, db)
 
