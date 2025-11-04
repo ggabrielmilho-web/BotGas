@@ -48,14 +48,23 @@ export function ChatHistory() {
   const fetchConversations = async () => {
     console.log('[ChatHistory] Buscando conversas...', new Date().toLocaleTimeString());
     try {
-      const params: any = {};
+      // Construir URL com query parameters
+      let url = '/api/v1/dashboard/conversations';
+      const params = new URLSearchParams();
+
       if (filter === 'intervention') {
-        params.intervention_only = true;
-      } else if (filter) {
-        params.status = filter;
+        params.append('intervention_only', 'true');
+      } else if (filter === 'active') {
+        params.append('status', 'active');
       }
 
-      const data = await api.get<Conversation[]>('/api/v1/dashboard/conversations');
+      // Adicionar query string à URL se houver parâmetros
+      if (params.toString()) {
+        url += '?' + params.toString();
+      }
+
+      console.log('[ChatHistory] URL da requisição:', url);
+      const data = await api.get<Conversation[]>(url);
       console.log('[ChatHistory] Conversas recebidas:', data.length, data);
       setConversations(data);
     } catch (error) {
