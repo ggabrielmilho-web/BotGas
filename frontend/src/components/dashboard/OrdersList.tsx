@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { DateRangeFilter } from './DateRangeFilter';
 import { api } from '@/lib/api';
 
 interface Order {
@@ -50,12 +51,23 @@ export function OrdersList() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<{ from: string | null; to: string | null }>({
+    from: null,
+    to: null,
+  });
 
   const fetchOrders = async () => {
     try {
-      const url = filter
-        ? `/api/v1/dashboard/orders?status=${filter}`
-        : '/api/v1/dashboard/orders';
+      // Construir URL com query parameters
+      let url = '/api/v1/dashboard/orders';
+      const params = new URLSearchParams();
+
+      if (filter) params.append('status', filter);
+      if (dateFilter.from) params.append('date_from', dateFilter.from);
+      if (dateFilter.to) params.append('date_to', dateFilter.to);
+
+      if (params.toString()) url += '?' + params.toString();
+
       console.log('🔍 Buscando pedidos em:', url);
       const response = await api.get(url);
       console.log('✅ Resposta recebida:', response);
@@ -75,7 +87,7 @@ export function OrdersList() {
     const interval = setInterval(fetchOrders, 10000);
 
     return () => clearInterval(interval);
-  }, [filter]);
+  }, [filter, dateFilter]);
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
@@ -99,9 +111,16 @@ export function OrdersList() {
 
   console.log('🎯 OrdersList renderizado com', orders.length, 'pedidos');
 
+  const handleDateFilterChange = (from: string | null, to: string | null) => {
+    setDateFilter({ from, to });
+  };
+
   return (
     <div className="space-y-4">
-      {/* Filtros */}
+      {/* Filtro de Data */}
+      <DateRangeFilter onFilterChange={handleDateFilterChange} />
+
+      {/* Filtros de Status */}
       <div className="flex gap-2">
         <Button
           variant={filter === null ? 'default' : 'outline'}

@@ -92,18 +92,38 @@ async def get_dashboard_summary(
 @router.get("/orders", response_model=List[OrderResponse])
 async def get_recent_orders(
     status: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     limit: int = Query(50, le=100),
     offset: int = Query(0),
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """
-    Lista pedidos recentes com filtros
+    Lista pedidos recentes com filtros de status e data
     """
     query = db.query(Order).filter(Order.tenant_id == current_tenant.id)
 
     if status:
         query = query.filter(Order.status == status)
+
+    # Filtro de data inicial
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+            query = query.filter(Order.created_at >= date_from_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de data_from inválido. Use YYYY-MM-DD")
+
+    # Filtro de data final (inclui o dia inteiro)
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            query = query.filter(Order.created_at <= date_to_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de date_to inválido. Use YYYY-MM-DD")
 
     orders = query.order_by(desc(Order.created_at)).offset(offset).limit(limit).all()
 
@@ -161,12 +181,14 @@ async def update_order_status(
 async def get_conversations(
     status: Optional[str] = Query(None),
     intervention_only: bool = Query(False),
+    date_from: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     limit: int = Query(50, le=100),
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """
-    Lista conversas com filtros
+    Lista conversas com filtros de status, intervenção e data
     """
     query = db.query(Conversation).filter(
         Conversation.tenant_id == current_tenant.id
@@ -177,6 +199,24 @@ async def get_conversations(
 
     if intervention_only:
         query = query.filter(Conversation.human_intervention == True)
+
+    # Filtro de data inicial
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+            query = query.filter(Conversation.started_at >= date_from_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de data_from inválido. Use YYYY-MM-DD")
+
+    # Filtro de data final (inclui o dia inteiro)
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            query = query.filter(Conversation.started_at <= date_to_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de date_to inválido. Use YYYY-MM-DD")
 
     conversations = query.order_by(desc(Conversation.started_at)).limit(limit).all()
 
@@ -215,18 +255,42 @@ async def get_conversation_messages(
 
 @router.get("/interventions")
 async def get_active_interventions(
+    date_from: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
+    active_only: bool = Query(True, description="Mostrar apenas intervenções ativas"),
     db: Session = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant)
 ):
     """
-    Lista intervenções humanas ativas
+    Lista intervenções humanas com filtros de data
     """
-    interventions = db.query(HumanIntervention).filter(
-        and_(
-            HumanIntervention.tenant_id == current_tenant.id,
-            HumanIntervention.ended_at.is_(None)
-        )
-    ).all()
+    query = db.query(HumanIntervention).filter(
+        HumanIntervention.tenant_id == current_tenant.id
+    )
+
+    # Filtro de intervenções ativas (padrão)
+    if active_only:
+        query = query.filter(HumanIntervention.ended_at.is_(None))
+
+    # Filtro de data inicial
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+            query = query.filter(HumanIntervention.started_at >= date_from_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de data_from inválido. Use YYYY-MM-DD")
+
+    # Filtro de data final (inclui o dia inteiro)
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            query = query.filter(HumanIntervention.started_at <= date_to_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de date_to inválido. Use YYYY-MM-DD")
+
+    interventions = query.all()
 
     result = []
     for intervention in interventions:

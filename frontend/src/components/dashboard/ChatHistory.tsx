@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AudioMessage } from './AudioMessage';
+import { DateRangeFilter } from './DateRangeFilter';
 import { api } from '@/lib/api';
 
 interface Message {
@@ -44,6 +45,10 @@ export function ChatHistory() {
   );
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<{ from: string | null; to: string | null }>({
+    from: null,
+    to: null,
+  });
 
   const fetchConversations = async () => {
     console.log('[ChatHistory] Buscando conversas...', new Date().toLocaleTimeString());
@@ -57,6 +62,9 @@ export function ChatHistory() {
       } else if (filter === 'active') {
         params.append('status', 'active');
       }
+
+      if (dateFilter.from) params.append('date_from', dateFilter.from);
+      if (dateFilter.to) params.append('date_to', dateFilter.to);
 
       // Adicionar query string à URL se houver parâmetros
       if (params.toString()) {
@@ -97,7 +105,7 @@ export function ChatHistory() {
       console.log('[ChatHistory] Limpando interval');
       clearInterval(interval);
     };
-  }, [filter]);
+  }, [filter, dateFilter]);
 
   if (loading) {
     return (
@@ -107,11 +115,18 @@ export function ChatHistory() {
     );
   }
 
+  const handleDateFilterChange = (from: string | null, to: string | null) => {
+    setDateFilter({ from, to });
+  };
+
   return (
     <div className="grid md:grid-cols-3 gap-4">
       {/* Lista de Conversas */}
       <div className="md:col-span-1 space-y-4">
-        {/* Filtros */}
+        {/* Filtro de Data */}
+        <DateRangeFilter onFilterChange={handleDateFilterChange} />
+
+        {/* Filtros de Status */}
         <div className="flex flex-col gap-2">
           <Button
             variant={filter === null ? 'default' : 'outline'}

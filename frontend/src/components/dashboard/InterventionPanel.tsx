@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AudioMessage } from './AudioMessage';
+import { DateRangeFilter } from './DateRangeFilter';
 import { api } from '@/lib/api';
 
 interface ActiveIntervention {
@@ -47,12 +48,25 @@ export function InterventionPanel() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dateFilter, setDateFilter] = useState<{ from: string | null; to: string | null }>({
+    from: null,
+    to: null,
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchInterventions = async () => {
     try {
-      const response = await api.get('/dashboard/interventions');
-      setInterventions(response.data);
+      // Construir URL com query parameters
+      let url = '/api/v1/dashboard/interventions';
+      const params = new URLSearchParams();
+
+      if (dateFilter.from) params.append('date_from', dateFilter.from);
+      if (dateFilter.to) params.append('date_to', dateFilter.to);
+
+      if (params.toString()) url += '?' + params.toString();
+
+      const response = await api.get(url);
+      setInterventions(response || []);
     } catch (error) {
       console.error('Erro ao buscar intervenções:', error);
     } finally {
@@ -62,8 +76,8 @@ export function InterventionPanel() {
 
   const fetchConversationDetails = async (conversationId: string) => {
     try {
-      const response = await api.get(`/dashboard/conversations/${conversationId}/messages`);
-      setConversationDetails(response.data);
+      const response = await api.get(`/api/v1/dashboard/conversations/${conversationId}/messages`);
+      setConversationDetails(response);
     } catch (error) {
       console.error('Erro ao buscar detalhes:', error);
     }
@@ -71,7 +85,7 @@ export function InterventionPanel() {
 
   const startIntervention = async (conversationId: string, reason?: string) => {
     try {
-      await api.post(`/conversations/${conversationId}/intervene`, { reason });
+      await api.post(`/api/v1/conversations/${conversationId}/intervene`, { reason });
       fetchInterventions();
     } catch (error) {
       console.error('Erro ao iniciar intervenção:', error);
@@ -80,7 +94,7 @@ export function InterventionPanel() {
 
   const resumeBot = async (conversationId: string, notes?: string) => {
     try {
-      await api.post(`/conversations/${conversationId}/resume`, { operator_notes: notes });
+      await api.post(`/api/v1/conversations/${conversationId}/resume`, { operator_notes: notes });
       setSelectedIntervention(null);
       setConversationDetails(null);
       fetchInterventions();
@@ -94,7 +108,7 @@ export function InterventionPanel() {
 
     setSending(true);
     try {
-      await api.post(`/conversations/${selectedIntervention.conversation_id}/send`, {
+      await api.post(`/api/v1/conversations/${selectedIntervention.conversation_id}/send`, {
         message: messageText,
       });
 
@@ -116,7 +130,7 @@ export function InterventionPanel() {
     const interval = setInterval(fetchInterventions, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [dateFilter]);
 
   useEffect(() => {
     if (selectedIntervention) {
@@ -152,13 +166,20 @@ export function InterventionPanel() {
     );
   }
 
+  const handleDateFilterChange = (from: string | null, to: string | null) => {
+    setDateFilter({ from, to });
+  };
+
   return (
     <div className="grid md:grid-cols-3 gap-4">
       {/* Lista de Intervenções Ativas */}
       <div className="md:col-span-1 space-y-4">
+        {/* Filtro de Data */}
+        <DateRangeFilter onFilterChange={handleDateFilterChange} />
+
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Intervenções Ativas</CardTitle>
+            <CardTitle className="text-lg">Intervenções</CardTitle>
             <CardDescription>
               {interventions.length} conversa{interventions.length !== 1 ? 's' : ''} com
               intervenção humana
