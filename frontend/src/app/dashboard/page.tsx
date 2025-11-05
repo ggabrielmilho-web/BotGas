@@ -7,6 +7,7 @@ import { OrdersList } from '@/components/dashboard/OrdersList';
 import { ChatHistory } from '@/components/dashboard/ChatHistory';
 import { InterventionPanel } from '@/components/dashboard/InterventionPanel';
 import { ProductsList } from '@/components/dashboard/ProductsList';
+import { DeliveryDriversList } from '@/components/dashboard/DeliveryDriversList';
 import { TrialBanner, TrialStatusCard } from '@/components/TrialBanner';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
@@ -196,6 +197,7 @@ export default function DashboardPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="products">Produtos</TabsTrigger>
+          <TabsTrigger value="drivers">Motoboys</TabsTrigger>
         </TabsList>
 
         <TabsContent value="orders" className="space-y-4">
@@ -212,6 +214,10 @@ export default function DashboardPage() {
 
         <TabsContent value="products" className="space-y-4">
           <ProductsList />
+        </TabsContent>
+
+        <TabsContent value="drivers" className="space-y-4">
+          <DeliveryDriversList />
         </TabsContent>
       </Tabs>
       </div>

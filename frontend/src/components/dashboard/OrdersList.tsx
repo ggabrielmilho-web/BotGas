@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DateRangeFilter } from './DateRangeFilter';
 import { api } from '@/lib/api';
 
@@ -27,6 +28,7 @@ interface Order {
   payment_method: string;
   created_at: string;
   customer_id: string;
+  driver_name?: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -46,6 +48,90 @@ const statusLabels: Record<string, string> = {
   delivered: 'Entregue',
   cancelled: 'Cancelado',
 };
+
+// Componente interno para selecionar motoboy
+function SendToDriverButton({ orderId, onSent }: { orderId: string; onSent: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLoading(true);
+      api.get('/api/v1/delivery-drivers/active')
+        .then(setDrivers)
+        .finally(() => setLoading(false));
+    }
+  }, [open]);
+
+  const handleSend = async (driverId: string) => {
+    setSending(true);
+    try {
+      await api.post(`/api/v1/dashboard/orders/${orderId}/send-to-driver`, {
+        driver_id: driverId
+      });
+      alert('Ticket enviado ao motoboy!');
+      onSent();
+      setOpen(false);
+    } catch (error: any) {
+      alert('Erro: ' + error.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        Enviar para Motoboy
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Selecionar Motoboy</DialogTitle>
+          </DialogHeader>
+
+          {loading ? (
+            <div className="py-8 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            </div>
+          ) : drivers.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <p>Nenhum motoboy ativo.</p>
+              <p className="text-sm mt-2">Cadastre um na aba Motoboys.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {drivers.map((driver) => (
+                <div
+                  key={driver.id}
+                  className="flex items-center justify-between p-3 border rounded hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="font-medium">{driver.name}</p>
+                    <p className="text-sm text-gray-500">{driver.phone}</p>
+                    <p className="text-xs text-gray-400">
+                      {driver.total_deliveries} entregas realizadas
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSend(driver.id)}
+                    disabled={sending}
+                  >
+                    {sending ? 'Enviando...' : 'Selecionar'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export function OrdersList() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -223,45 +309,39 @@ export function OrdersList() {
                 {/* Ações */}
                 <div className="flex gap-2 pt-2">
                   {order.status === 'new' && (
-                    <Button
-                      size="sm"
-                      onClick={() => updateOrderStatus(order.id, 'confirmed')}
-                    >
-                      Confirmar
-                    </Button>
+                    <>
+                      <SendToDriverButton orderId={order.id} onSent={fetchOrders} />
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => updateOrderStatus(order.id, 'cancelled')}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
                   )}
+
                   {order.status === 'confirmed' && (
-                    <Button
-                      size="sm"
-                      onClick={() => updateOrderStatus(order.id, 'preparing')}
-                    >
-                      Iniciar Preparo
-                    </Button>
+                    <>
+                      <Badge className="bg-yellow-600">
+                        🚚 Em entrega
+                        {order.driver_name && ` - ${order.driver_name}`}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'delivered')}
+                      >
+                        Confirmar Entrega
+                      </Button>
+                    </>
                   )}
-                  {order.status === 'preparing' && (
-                    <Button
-                      size="sm"
-                      onClick={() => updateOrderStatus(order.id, 'delivering')}
-                    >
-                      Saiu para Entrega
-                    </Button>
+
+                  {order.status === 'delivered' && (
+                    <Badge className="bg-green-600">✅ Entregue</Badge>
                   )}
-                  {order.status === 'delivering' && (
-                    <Button
-                      size="sm"
-                      onClick={() => updateOrderStatus(order.id, 'delivered')}
-                    >
-                      Marcar como Entregue
-                    </Button>
-                  )}
-                  {['new', 'confirmed'].includes(order.status) && (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => updateOrderStatus(order.id, 'cancelled')}
-                    >
-                      Cancelar
-                    </Button>
+
+                  {order.status === 'cancelled' && (
+                    <Badge className="bg-red-600">❌ Cancelado</Badge>
                   )}
                 </div>
               </CardContent>

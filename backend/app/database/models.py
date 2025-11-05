@@ -227,6 +227,25 @@ class AddressCache(Base):
 
 
 # ============================================================================
+# DELIVERY DRIVERS (Motoboys)
+# ============================================================================
+
+class DeliveryDriver(Base):
+    __tablename__ = "delivery_drivers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    phone = Column(String(20), nullable=False)
+    is_active = Column(Boolean, default=True)
+    total_deliveries = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    tenant = relationship("Tenant")
+
+
+# ============================================================================
 # ORDERS (Pedidos)
 # ============================================================================
 
@@ -245,6 +264,7 @@ class Order(Base):
     delivery_address = Column(JSON)
     payment_method = Column(String(50))
     notes = Column(Text)
+    driver_name = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
     delivered_at = Column(DateTime)
 

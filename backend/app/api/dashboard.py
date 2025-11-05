@@ -4,10 +4,11 @@ Fornece dados em tempo real para o dashboard administrativo
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, desc
+from sqlalchemy import func, and_, desc, cast, Text
 from typing import List, Optional
 from datetime import datetime, timedelta
 from uuid import UUID
+from pydantic import BaseModel
 
 from app.database.base import get_db
 from app.database.models import (
@@ -378,3 +379,111 @@ async def get_realtime_stats(
         "recent_conversations": recent_conversations,
         "timestamp": datetime.now().isoformat()
     }
+
+
+# ============================================================================
+# DELIVERY DRIVER ENDPOINTS
+# ============================================================================
+
+class SendToDriverRequest(BaseModel):
+    driver_id: UUID
+
+@router.post("/orders/{order_id}/send-to-driver")
+async def send_order_to_driver(
+    order_id: UUID,
+    request: SendToDriverRequest,
+    db: Session = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant)
+):
+    """Envia ticket do pedido ao motoboy via WhatsApp"""
+
+    # Buscar pedido
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.tenant_id == current_tenant.id,
+        Order.status == 'new'
+    ).first()
+
+    if not order:
+        raise HTTPException(404, "Pedido não encontrado ou já processado")
+
+    # Buscar motoboy
+    from app.database.models import DeliveryDriver
+
+    driver = db.query(DeliveryDriver).filter(
+        DeliveryDriver.id == request.driver_id,
+        DeliveryDriver.tenant_id == current_tenant.id,
+        DeliveryDriver.is_active == True
+    ).first()
+
+    if not driver:
+        raise HTTPException(404, "Motoboy não encontrado ou inativo")
+
+    # Buscar cliente
+    customer = db.query(Customer).filter(
+        Customer.id == order.customer_id
+    ).first()
+
+    # Formatar itens do pedido
+    items_text = "\n".join([
+        f"- {item.get('quantity')}x {item.get('product_name')} (R$ {float(item.get('subtotal', 0)):.2f})"
+        for item in order.items
+    ])
+
+    # Formatar endereço
+    address = order.delivery_address or {}
+    address_text = address.get('normalized_address') or address.get('address', 'Endereço não informado')
+    neighborhood = address.get('neighborhood', '')
+
+    # Montar ticket
+    ticket = f"""🚚 *Nova Entrega - Pedido #{order.order_number}*
+
+📦 *Itens:*
+{items_text}
+
+💰 *Valor Total:* R$ {float(order.total):.2f}
+💳 *Pagamento:* {order.payment_method}
+
+📍 *Endereço:*
+{address_text}
+{f'Bairro: {neighborhood}' if neighborhood else ''}
+
+👤 *Cliente:* {customer.name if customer else 'N/A'}
+📞 *Contato:* {customer.whatsapp_number if customer else 'N/A'}
+
+---
+Boa entrega! 🏍️"""
+
+    # Enviar via Evolution API
+    from app.services.evolution import evolution_service
+    import re
+
+    try:
+        instance_name = f"tenant_{str(current_tenant.id)}"
+
+        # Normalizar telefone: adicionar +55 se não tiver
+        phone = re.sub(r'[^0-9]', '', driver.phone)  # Remove caracteres especiais
+        if not phone.startswith('55'):
+            phone = '55' + phone
+
+        await evolution_service.send_text_message(
+            instance_name=instance_name,
+            number=phone,
+            message=ticket
+        )
+
+        # Atualizar pedido
+        order.driver_name = driver.name
+        order.status = 'confirmed'
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"Ticket enviado para {driver.name}",
+            "driver_name": driver.name,
+            "order_status": "confirmed"
+        }
+
+    except Exception as e:
+        raise HTTPException(500, f"Erro ao enviar ticket: {str(e)}")
