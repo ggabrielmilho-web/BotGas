@@ -342,11 +342,26 @@ class HybridDeliveryService:
 
         neighborhood_deliverable = len([n for n in neighborhoods if n.delivery_type != 'not_available'])
 
+        # Calcular médias de taxa e tempo
+        avg_fee = 0.0
+        avg_time = 60
+
+        if neighborhoods or radius_configs:
+            fees = [float(n.delivery_fee) for n in neighborhoods] + [float(r.delivery_fee) for r in radius_configs]
+            times = [n.delivery_time_minutes for n in neighborhoods] + [r.delivery_time_minutes for r in radius_configs]
+
+            if fees:
+                avg_fee = sum(fees) / len(fees)
+            if times:
+                avg_time = int(sum(times) / len(times))
+
         return {
             'total_neighborhoods': len(neighborhoods),
+            'total_radius_configs': len(radius_configs),
             'deliverable_neighborhoods': neighborhood_deliverable,
-            'radius_configs': len(radius_configs),
-            'cached_addresses': cache_count,
+            'cached_addresses': cache_count or 0,
+            'average_delivery_fee': round(avg_fee, 2),
+            'average_delivery_time': avg_time,
             'delivery_mode': 'hybrid',
             'status': 'active' if (neighborhoods or radius_configs) else 'not_configured'
         }

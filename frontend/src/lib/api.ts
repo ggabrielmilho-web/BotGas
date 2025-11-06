@@ -351,6 +351,12 @@ export const deliveryApi = {
       body: JSON.stringify({ neighborhoods }),
     }),
 
+  updateNeighborhood: (id: string, data: Partial<CreateNeighborhoodRequest>) =>
+    fetchApi<{ success: boolean; neighborhood: Neighborhood }>(`/api/v1/delivery/neighborhoods/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   deleteNeighborhood: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/v1/delivery/neighborhoods/${id}`, {
       method: 'DELETE',
@@ -372,6 +378,12 @@ export const deliveryApi = {
         center_address: centerAddress,
         radius_tiers: tiers,
       }),
+    }),
+
+  updateRadiusConfig: (id: string, data: Partial<CreateRadiusConfigRequest>) =>
+    fetchApi<{ success: boolean; config: RadiusConfig }>(`/api/v1/delivery/radius/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   deleteRadiusConfig: (id: string) =>
